@@ -60,11 +60,49 @@
             PieChart, Palette, Settings2, AlertTriangle, CheckCircle2, LandPlot,
             Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
             MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
-            Building, FilePlus
+            Building, FilePlus, Sparkles, Loader2
         } = lucide;
         // Penanganan duplikasi alias di Lucide
         const MapIcon = lucide.Map; 
         const MapComponent = lucide.Map; 
+
+        // --- GEMINI API CONFIGURATION ---
+        const apiKey = ""; 
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        const callGeminiAPI = async (systemInstruction, promptText) => {
+            let payload = {
+                contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] }
+            };
+
+            let retries = 3;
+            let delay = 1000;
+            
+            while (retries > 0) {
+                try {
+                    const response = await fetch(GEMINI_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const data = await response.json();
+                    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (!textResponse) throw new Error("Empty response from Gemini");
+                    return textResponse;
+                } catch (error) {
+                    console.warn(`Gemini API Error, retries left: ${retries - 1}`, error);
+                    retries--;
+                    if (retries === 0) throw error;
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2; 
+                }
+            }
+        };
 
         // 3. Error Boundary Component untuk menangkap error UI/Render
         class ErrorBoundary extends React.Component {
@@ -119,8 +157,8 @@
           ],
           
           buildings: [
-            { id: 'b1', name: 'Gedung Utama', kdbFloorId: 'f1', ktbFloorId: '' },
-            { id: 'b2', name: 'Gedung Penunjang', kdbFloorId: 'f3', ktbFloorId: '' }
+            { id: 'b1', name: 'Gedung Utama', kdbFloorId: 'f1', ktbFloorId: '', notes: '' },
+            { id: 'b2', name: 'Gedung Penunjang', kdbFloorId: 'f3', ktbFloorId: '', notes: '' }
           ],
           floors: [
             { id: 'f1', buildingId: 'b1', name: 'Lantai 1', isBasement: false, floorHeight: 4.0, factorValues: { fac1: 25, fac2: 2.5, fac3: 2.5 } },
@@ -128,9 +166,9 @@
             { id: 'f3', buildingId: 'b2', name: 'Lantai Dasar', isBasement: false, floorHeight: 4.0, factorValues: { fac1: 20, fac2: 2.0, fac3: 2.0 } }
           ],
           rooms: [
-            { id: 'r1', label: 'Lobby & Resepsionis', floorId: 'f1', zoneId: 'z1', count: 1, std: 60, notes: '' },
-            { id: 'r2', label: 'Ruang Kepala', floorId: 'f2', zoneId: 'z3', count: 1, std: 40, notes: '' },
-            { id: 'r3', label: 'Ruang Rapat Bersama', floorId: 'f3', zoneId: 'z2', count: 2, std: 50, notes: '' }
+            { id: 'r1', label: 'Lobby & Resepsionis', floorId: 'f1', zoneId: 'z1', count: 1, std: 60, notes: '', occupants: '' },
+            { id: 'r2', label: 'Ruang Kepala', floorId: 'f2', zoneId: 'z3', count: 1, std: 40, notes: '', occupants: '' },
+            { id: 'r3', label: 'Ruang Rapat Bersama', floorId: 'f3', zoneId: 'z2', count: 2, std: 50, notes: '', occupants: '10' }
           ]
         };
 
@@ -229,6 +267,7 @@
           const [isExportingExcel, setIsExportingExcel] = useState(false);
           const [isPrinting, setIsPrinting] = useState(false);
           const [isAutosaving, setIsAutosaving] = useState(false);
+          const [aiLoadingState, setAiLoadingState] = useState({});
 
           const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
 
@@ -268,7 +307,7 @@
           const referenceSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.notes).filter(n => n && n.trim() !== ''))), [rooms]);
           const roomNameSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.label).filter(n => n && n.trim() !== '' && n !== 'Ruang Baru'))), [rooms]);
 
-          // STATS CALCULATION
+          // STATS CALCULATION (Updated untuk total penghuni)
           const stats = useMemo(() => {
             const safeNum = (val) => Number(val) || 0;
             const lArea = safeNum(landArea);
@@ -284,7 +323,13 @@
             factors.forEach(fac => globalFactorAreas[fac.id] = 0);
 
             const floorDetails = floors.map(f => {
-              const nettoFloor = rooms.filter(r => r.floorId === f.id).reduce((acc, r) => acc + (safeNum(r.count) * safeNum(r.std)), 0);
+              let occupantsFloor = 0;
+              const nettoFloor = rooms.filter(r => r.floorId === f.id).reduce((acc, r) => {
+                const count = safeNum(r.count);
+                const headCount = (r.occupants !== undefined && r.occupants !== '') ? safeNum(r.occupants) * count : 0;
+                occupantsFloor += headCount;
+                return acc + (count * safeNum(r.std));
+              }, 0);
               
               let totalMultiplier = 0;
               factors.forEach(fac => {
@@ -297,13 +342,14 @@
               globalNettoTotal += nettoFloor;
               globalBrutoTotal += brutoFloor;
               
-              return { ...f, netto: nettoFloor, bruto: brutoFloor, totalMultiplier };
+              return { ...f, netto: nettoFloor, bruto: brutoFloor, totalMultiplier, occupants: occupantsFloor };
             });
 
             const buildingDetails = buildings.map(b => {
               const bFloors = floorDetails.filter(fd => fd.buildingId === b.id);
               const bNetto = bFloors.reduce((acc, fd) => acc + fd.netto, 0);
               const bBruto = bFloors.reduce((acc, fd) => acc + fd.bruto, 0);
+              const bOccupants = bFloors.reduce((acc, fd) => acc + fd.occupants, 0);
               const bFootprint = bFloors.find(fd => fd.id === b.kdbFloorId)?.bruto || 0;
               const bBasementFootprint = bFloors.find(fd => fd.id === b.ktbFloorId)?.bruto || 0;
               
@@ -316,7 +362,8 @@
               const bZoneBreakdown = zones.map(z => {
                 let zNettoArea = 0; let zBrutoArea = 0;
                 rooms.filter(r => r.zoneId === z.id && bFloors.some(f => f.id === r.floorId)).forEach(r => {
-                  const rNetto = safeNum(r.count) * safeNum(r.std);
+                  const count = safeNum(r.count);
+                  const rNetto = count * safeNum(r.std);
                   zNettoArea += rNetto;
                   const floor = floors.find(f => f.id === r.floorId);
                   let multiplier = 0;
@@ -326,7 +373,7 @@
                 return { id: z.id, name: z.label, area: zNettoArea, brutoArea: zBrutoArea, style: getZoneStyle(z.colorId) };
               });
 
-              return { ...b, floors: bFloors, netto: bNetto, bruto: bBruto, footprint: bFootprint, basementFootprint: bBasementFootprint, heightAbove, depthBelow, zoneBreakdown: bZoneBreakdown };
+              return { ...b, floors: bFloors, netto: bNetto, bruto: bBruto, footprint: bFootprint, basementFootprint: bBasementFootprint, heightAbove, depthBelow, zoneBreakdown: bZoneBreakdown, occupants: bOccupants };
             });
 
             const currentKDB = lArea > 0 ? (globalFootprintArea / lArea) * 100 : 0;
@@ -341,7 +388,8 @@
             const zoneBreakdown = zones.map(z => {
               let nettoArea = 0; let brutoArea = 0;
               rooms.filter(r => r.zoneId === z.id).forEach(r => {
-                const rNetto = safeNum(r.count) * safeNum(r.std);
+                const count = safeNum(r.count);
+                const rNetto = count * safeNum(r.std);
                 nettoArea += rNetto;
                 const floor = floors.find(f => f.id === r.floorId);
                 let multiplier = 0;
@@ -383,7 +431,7 @@
 
             setAppState(prev => ({
               ...prev,
-              buildings: [...prev.buildings, { id: newId, name: `Gedung ${prev.buildings.length + 1}`, kdbFloorId: newFloorId, ktbFloorId: '' }],
+              buildings: [...prev.buildings, { id: newId, name: `Gedung ${prev.buildings.length + 1}`, kdbFloorId: newFloorId, ktbFloorId: '', notes: '' }],
               floors: [...prev.floors, { id: newFloorId, buildingId: newId, name: 'Lantai Dasar', isBasement: false, floorHeight: 4.0, factorValues: initialFactors }]
             }));
             setActiveBuildingId(newId);
@@ -649,7 +697,7 @@
           const addRoom = useCallback((fId) => {
             setAppState(prev => ({
                ...prev,
-               rooms: [...prev.rooms, { id: Math.random().toString(36).substr(2, 9), label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '' }]
+               rooms: [...prev.rooms, { id: Math.random().toString(36).substr(2, 9), label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '', occupants: '' }]
             }));
             setCollapsedFloors(prev => ({ ...prev, [fId]: false }));
           }, [setAppState]);
@@ -841,6 +889,26 @@
             e.target.value = null;
           }, [setAppState, showAlert]);
 
+          const handleEnhanceBuildingNote = async (buildingId, buildingName, currentNote) => {
+              setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: true }));
+              try {
+                  const systemInstruction = "Anda adalah asisten perencana ruang (space planner) profesional. Sempurnakan catatan/spesifikasi gedung ini agar lebih baku, profesional, dan jelas dalam Bahasa Indonesia.";
+                  const promptText = currentNote && currentNote.trim() !== ''
+                      ? `Perbaiki dan susun ulang catatan gedung ini menjadi 1-2 kalimat profesional:\n\nNama Gedung: ${buildingName}\nCatatan Awal: ${currentNote}`
+                      : `Berikan contoh 1 kalimat catatan/spesifikasi umum yang relevan untuk gedung bernama "${buildingName}".`;
+
+                  const enhancedNote = await callGeminiAPI(systemInstruction, promptText);
+                  if (enhancedNote) {
+                      updateBuilding(buildingId, 'notes', enhancedNote.replace(/["*]/g, '').trim());
+                  }
+              } catch (error) {
+                  console.error("AI Enhance Note Error:", error);
+                  showAlert("Gagal memproses catatan dengan AI. Pastikan koneksi internet lancar.", "AI Error");
+              } finally {
+                  setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: false }));
+              }
+          };
+
           const handlePrintPDF = useCallback(() => {
             setIsPrinting(true);
             const generatePDF = () => {
@@ -902,14 +970,17 @@
 
                 stats.buildingDetails.forEach(b => {
                    wsData.push([c(`RINCIAN: ${b.name.toUpperCase()}`, styleSubtitle)]);
+                   if (b.notes && b.notes.trim() !== '') {
+                       wsData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "475569" } } })]);
+                   }
                    wsData.push([]);
-                   wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jumlah", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Keterangan", styleHeader) ]);
+                   wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jml Ruang", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Penghuni", styleHeader), c("Keterangan", styleHeader) ]);
 
                    b.floors.forEach(f => {
                       const floorHeaderFill = { fgColor: { rgb: "F1F5F9" } };
                       wsData.push([
                         c(f.name, { ...styleDataText, font: { bold: true }, fill: floorHeaderFill }),
-                        c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill })
+                        c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill })
                       ]);
                       
                       let floorRooms = rooms.filter(r => r.floorId === f.id);
@@ -918,8 +989,10 @@
 
                       floorRooms.forEach(room => {
                         const z = zones.find(z => z.id === room.zoneId) || zones[0];
-                        const count = Number(room.count) || 0; const std = Number(room.std) || 0; const netto = count * std;
-                        wsData.push([ c("", styleDataText), c(room.label, styleDataText), c(z.label, styleDataNumber), c(count, styleDataNumber), c(std, styleDataNumber), c(Number(netto.toFixed(2)), styleDataNumberBold), c(room.notes || "-", styleDataText) ]);
+                        const count = Number(room.count) || 0; 
+                        const std = Number(room.std) || 0; 
+                        const netto = count * std;
+                        wsData.push([ c("", styleDataText), c(room.label, styleDataText), c(z.label, styleDataNumber), c(count, styleDataNumber), c(std, styleDataNumber), c(Number(netto.toFixed(2)), styleDataNumberBold), c(room.occupants || "-", styleDataNumber), c(room.notes || "-", styleDataText) ]);
                       });
 
                       factors.forEach(fac => {
@@ -929,15 +1002,15 @@
                             c("", styleDataText), c("", styleDataText), 
                             c(`+ ${fac.label}`, { ...styleDataText, font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } }), 
                             c(`${facValue}%`, { ...styleDataNumber, font: { italic: true } }), 
-                            c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder) 
+                            c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder), c("", emptyBorder) 
                           ]);
                         }
                       });
                       
-                      wsData.push([ c("", styleDataText), c(`Subtotal Netto ${f.name} (tanpa luasan faktor tambahan)`, { ...styleDataText, font: { bold: true } }), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(Number(f.netto.toFixed(2)), styleDataNumberBold), c("", emptyBorder) ]);
+                      wsData.push([ c("", styleDataText), c(`Subtotal Netto ${f.name} (tanpa luasan faktor tambahan)`, { ...styleDataText, font: { bold: true } }), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(Number(f.netto.toFixed(2)), styleDataNumberBold), c(f.occupants, styleDataNumberBold), c("", emptyBorder) ]);
 
                       const floorTotalFill = { fgColor: { rgb: "E0E7FF" } };
-                      wsData.push([ c("", { border: borderAll, fill: floorTotalFill }), c(`TOTAL BRUTO ${f.name}`, { ...styleDataText, font: { bold: true }, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c(Number(f.bruto.toFixed(2)), { ...styleDataNumberBold, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }) ]);
+                      wsData.push([ c("", { border: borderAll, fill: floorTotalFill }), c(`TOTAL BRUTO ${f.name}`, { ...styleDataText, font: { bold: true }, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c(Number(f.bruto.toFixed(2)), { ...styleDataNumberBold, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }) ]);
                       wsData.push([]);
                    });
 
@@ -946,11 +1019,12 @@
                    const styleBuildingTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
                    wsData.push([
                       c("", { border: borderAll, fill: buildingTotalFill }),
-                      c(`TOTAL GFA ${b.name.toUpperCase()}`, styleBuildingTotalText),
+                      c(`TOTAL GFA & PENGHUNI ${b.name.toUpperCase()}`, styleBuildingTotalText),
                       c("", { border: borderAll, fill: buildingTotalFill }),
                       c("", { border: borderAll, fill: buildingTotalFill }),
                       c("", { border: borderAll, fill: buildingTotalFill }),
                       c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber),
+                      c(b.occupants, styleBuildingTotalNumber),
                       c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E2E8F0" }, italic: true }, fill: buildingTotalFill, border: borderAll })
                    ]);
                    wsData.push([]);
@@ -967,12 +1041,13 @@
                   c("", { border: borderAll, fill: grandTotalFill }),
                   c("", { border: borderAll, fill: grandTotalFill }),
                   c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber),
+                  c("", { border: borderAll, fill: grandTotalFill }),
                   c("", { border: borderAll, fill: grandTotalFill })
                 ]);
                 wsData.push([]);
 
                 const wb = window.XLSX.utils.book_new(); const ws = window.XLSX.utils.aoa_to_sheet(wsData);
-                ws['!cols'] = [ { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 18 }, { wch: 40 } ];
+                ws['!cols'] = [ { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 40 } ];
                 window.XLSX.utils.book_append_sheet(wb, ws, "Program Ruang");
                 window.XLSX.writeFile(wb, `${(projectName || 'Laporan').replace(/\s+/g, '_')}.xlsx`);
               } catch (error) { console.error("Export failed:", error); showAlert("Terjadi kesalahan saat mengekspor Excel.", "Error"); } 
@@ -1330,39 +1405,61 @@
                                  </button>
                               </div>
 
-                              <div className="flex flex-col md:flex-row gap-6 items-start mb-8 bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
-                                  <div className="flex-1 w-full">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nama Gedung</label>
-                                      <input 
-                                        type="text" 
-                                        value={activeBuilding.name} 
-                                        onChange={(e) => updateBuilding(activeBuilding.id, 'name', e.target.value)} 
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 font-black text-slate-800 text-lg focus:ring-2 focus:ring-indigo-400 outline-none" 
+                              <div className="flex flex-col gap-6 mb-8 bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
+                                  <div className="flex flex-col md:flex-row gap-6 items-start">
+                                      <div className="flex-1 w-full">
+                                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nama Gedung</label>
+                                          <input 
+                                            type="text" 
+                                            value={activeBuilding.name} 
+                                            onChange={(e) => updateBuilding(activeBuilding.id, 'name', e.target.value)} 
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 font-black text-slate-800 text-lg focus:ring-2 focus:ring-indigo-400 outline-none" 
+                                          />
+                                      </div>
+                                      <div className="flex-1 w-full">
+                                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Lantai Acuan Footprint (KDB)</label>
+                                          <select 
+                                            value={activeBuilding.kdbFloorId} 
+                                            onChange={(e) => updateBuilding(activeBuilding.id, 'kdbFloorId', e.target.value)} 
+                                            className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-400 outline-none"
+                                          >
+                                            <option value="">-- Tidak Dihitung --</option>
+                                            {activeBuildingFloors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                          </select>
+                                          <p className="text-[9px] text-slate-500 mt-1 pl-1">Menyumbang {stats.buildingDetails.find(b=>b.id === activeBuilding.id)?.footprint.toFixed(1)} m² ke KDB Kawasan.</p>
+                                      </div>
+                                      <div className="flex-1 w-full">
+                                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Lantai Acuan Basement (KTB)</label>
+                                          <select 
+                                            value={activeBuilding.ktbFloorId} 
+                                            onChange={(e) => updateBuilding(activeBuilding.id, 'ktbFloorId', e.target.value)} 
+                                            className="w-full bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                                          >
+                                            <option value="">-- Tidak Punya Basement --</option>
+                                            {activeBuildingFloors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                          </select>
+                                          <p className="text-[9px] text-slate-500 mt-1 pl-1">Menyumbang {stats.buildingDetails.find(b=>b.id === activeBuilding.id)?.basementFootprint.toFixed(1)} m² ke KTB Kawasan.</p>
+                                      </div>
+                                  </div>
+                                  <div className="w-full">
+                                      <div className="flex justify-between items-center mb-2">
+                                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Keterangan / Catatan Gedung (Opsional)</label>
+                                          <button 
+                                              onClick={() => handleEnhanceBuildingNote(activeBuilding.id, activeBuilding.name, activeBuilding.notes)}
+                                              disabled={aiLoadingState[`building_note_${activeBuilding.id}`]}
+                                              className="flex items-center gap-1 text-[10px] font-bold text-purple-600 hover:text-purple-800 disabled:opacity-50 transition-colors"
+                                          >
+                                              {aiLoadingState[`building_note_${activeBuilding.id}`] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                              {aiLoadingState[`building_note_${activeBuilding.id}`] ? 'Memproses...' : 'Percantik AI'}
+                                          </button>
+                                      </div>
+                                      <textarea 
+                                          rows="2"
+                                          value={activeBuilding.notes || ''} 
+                                          onChange={(e) => updateBuilding(activeBuilding.id, 'notes', e.target.value)} 
+                                          placeholder="Misal: Peruntukan khusus, tipe struktur, fasad, atau catatan lain..." 
+                                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-400 outline-none resize-none" 
                                       />
-                                  </div>
-                                  <div className="flex-1 w-full">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Lantai Acuan Footprint (KDB)</label>
-                                      <select 
-                                        value={activeBuilding.kdbFloorId} 
-                                        onChange={(e) => updateBuilding(activeBuilding.id, 'kdbFloorId', e.target.value)} 
-                                        className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-400 outline-none"
-                                      >
-                                        <option value="">-- Tidak Dihitung --</option>
-                                        {activeBuildingFloors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                      </select>
-                                      <p className="text-[9px] text-slate-500 mt-1 pl-1">Menyumbang {stats.buildingDetails.find(b=>b.id === activeBuilding.id)?.footprint.toFixed(1)} m² ke KDB Kawasan.</p>
-                                  </div>
-                                  <div className="flex-1 w-full">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Lantai Acuan Basement (KTB)</label>
-                                      <select 
-                                        value={activeBuilding.ktbFloorId} 
-                                        onChange={(e) => updateBuilding(activeBuilding.id, 'ktbFloorId', e.target.value)} 
-                                        className="w-full bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
-                                      >
-                                        <option value="">-- Tidak Punya Basement --</option>
-                                        {activeBuildingFloors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                      </select>
-                                      <p className="text-[9px] text-slate-500 mt-1 pl-1">Menyumbang {stats.buildingDetails.find(b=>b.id === activeBuilding.id)?.basementFootprint.toFixed(1)} m² ke KTB Kawasan.</p>
                                   </div>
                               </div>
 
@@ -1449,9 +1546,10 @@
                                                 <th className="py-3 px-2 text-left min-w-[140px] cursor-pointer hover:text-indigo-600 group select-none" onClick={() => sortRoomsInFloor(f.id, 'name')}>
                                                   <div className="flex items-center gap-1">Nama Ruangan {ArrowUpDown && <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-100" />}</div>
                                                 </th>
-                                                <th className="py-3 px-2 text-center w-16">Jml</th>
+                                                <th className="py-3 px-2 text-center w-14">Jml</th>
                                                 <th className="py-3 px-2 text-center w-20">m²/Unit</th>
                                                 <th className="py-3 px-4 text-center w-20">Luas (m²)</th>
+                                                <th className="py-3 px-2 text-center w-16" title="Catatan Estimasi Kapasitas Penghuni per Ruang">Penghuni</th>
                                                 <th className="py-3 px-2 text-left min-w-[140px]">Referensi / Ket.</th>
                                                 <th className="py-3 px-2 w-10"></th>
                                               </tr>
@@ -1466,13 +1564,14 @@
                                                     <td className="py-3 px-2"><input type="number" value={room.count} onChange={(e) => updateRoom(room.id, 'count', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
                                                     <td className="py-3 px-2"><input type="number" step="0.1" value={room.std} onChange={(e) => updateRoom(room.id, 'std', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
                                                     <td className="py-3 px-4 text-center font-bold text-slate-700">{((Number(room.count) || 0) * (Number(room.std) || 0)).toFixed(1)}</td>
+                                                    <td className="py-3 px-2"><input type="number" value={room.occupants || ''} onChange={(e) => updateRoom(room.id, 'occupants', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} placeholder="-" className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:border-indigo-300 focus:bg-white rounded-lg text-center font-bold py-1 px-1 transition-colors" /></td>
                                                     <td className="py-3 px-2"><input type="text" list="reference-options" value={room.notes || ''} onChange={(e) => updateRoom(room.id, 'notes', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} placeholder="Ref. standar..." className="w-full bg-transparent border-none font-medium text-slate-500 text-[11px] italic focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
                                                     <td className="py-3 px-2 text-center"><button onClick={() => removeRoom(room.id)} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100">{X && <X className="w-4 h-4" />}</button></td>
                                                   </tr>
                                                 );
                                               })}
                                               <tr>
-                                                <td colSpan={7} className="py-3 px-6">
+                                                <td colSpan={8} className="py-3 px-6">
                                                   <button onClick={() => addRoom(f.id)} className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100/80 border border-dashed border-indigo-300 rounded-xl transition-all">
                                                     {PlusCircle && <PlusCircle className="w-4 h-4" />} Tambah Ruang Baru (Enter)
                                                   </button>
@@ -1483,7 +1582,7 @@
                                               <tr className="bg-slate-50/50 text-[11px] font-black">
                                                 <td colSpan={4} className="py-3 px-6 text-right text-slate-400 uppercase">Estimasi Bruto {f.name} (+{stats.floorDetails.find(fd => fd.id === f.id)?.totalMultiplier ?? 0}%)</td>
                                                 <td className="py-3 px-4 text-center text-indigo-600">{stats.floorDetails.find(fd => fd.id === f.id)?.bruto.toFixed(1)} m²</td>
-                                                <td colSpan={2}></td>
+                                                <td colSpan={3}></td>
                                               </tr>
                                             </tfoot>
                                           </table>
@@ -1610,9 +1709,15 @@
                       <div className="p-8 print:p-0 space-y-12">
                         {stats.buildingDetails.map(b => (
                             <div key={b.id} className="break-inside-avoid">
-                                <div className="bg-indigo-600 text-white p-3 rounded-t-xl flex justify-between items-center print:bg-slate-300 print:text-black print:border print:border-black">
-                                    <h3 className="font-black uppercase tracking-wider">{b.name}</h3>
+                                <div className={`bg-indigo-600 text-white p-3 rounded-t-xl flex justify-between items-center print:bg-slate-300 print:text-black print:border print:border-black`}>
+                                    <h3 className="font-black uppercase tracking-wider">{b.name} <span className="text-xs ml-2 opacity-80 normal-case font-medium">({b.occupants} Penghuni)</span></h3>
                                 </div>
+                                {b.notes && (
+                                    <div className="bg-indigo-50 border-x border-slate-200 px-4 py-3 text-xs text-indigo-800 print:border-x-black print:bg-white print:text-black flex gap-2 items-start">
+                                        <Info className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
+                                        <p><strong>Catatan Gedung:</strong> {b.notes}</p>
+                                    </div>
+                                )}
                                 <table className="w-full border-collapse text-xs border border-t-0 border-slate-200 print:border-black">
                                 <thead>
                                     <tr className="bg-slate-100 text-slate-600 font-black uppercase tracking-tighter print:bg-slate-200 print:text-black">
@@ -1621,6 +1726,7 @@
                                     <th className="py-2 px-4 text-center border print:border-black">Zona</th>
                                     <th className="py-2 px-4 text-center border print:border-black">Jml</th>
                                     <th className="py-2 px-4 text-center border print:border-black">Luas (m²)</th>
+                                    <th className="py-2 px-4 text-center border print:border-black">Penghuni</th>
                                     <th className="py-2 px-4 text-left border print:border-black">Keterangan</th>
                                     </tr>
                                 </thead>
@@ -1636,7 +1742,7 @@
                                             return (
                                                 <tr className="border-b border-slate-100 print:border-slate-300">
                                                     <td className="py-2 px-4 font-black text-slate-700 bg-slate-50 border-x border-slate-100 print:border-slate-300 align-top w-24">{f.name}</td>
-                                                    <td colSpan={5} className="py-2 px-4 text-center text-slate-400 italic border-x border-slate-100 print:border-slate-300">Belum ada ruangan</td>
+                                                    <td colSpan={6} className="py-2 px-4 text-center text-slate-400 italic border-x border-slate-100 print:border-slate-300">Belum ada ruangan</td>
                                                 </tr>
                                             );
                                         }
@@ -1654,6 +1760,7 @@
                                                 <td className="py-2 px-4 text-center border-x border-slate-100 print:border-slate-300"><span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase print:border print:border-slate-400 print:bg-transparent print:text-black ${getZoneStyle(z.colorId).color}`}>{z.label}</span></td>
                                                 <td className="py-2 px-4 text-center border-x border-slate-100 print:border-slate-300">{room.count}</td>
                                                 <td className="py-2 px-4 text-center font-bold border-x border-slate-100 print:border-slate-300">{((Number(room.count) || 0) * (Number(room.std) || 0)).toFixed(1)}</td>
+                                                <td className="py-2 px-4 text-center border-x border-slate-100 print:border-slate-300">{room.occupants || '-'}</td>
                                                 <td className="py-2 px-4 text-left text-[10px] text-slate-500 italic max-w-[120px] truncate border-x border-slate-100 print:border-slate-300">{room.notes || '-'}</td>
                                             </tr>
                                             );
@@ -1669,6 +1776,7 @@
                                             <td className="py-1 px-4 text-center italic border-r border-slate-50 print:border-slate-300">+ {fac.label}</td>
                                             <td className="py-1 px-4 text-center italic border-r border-slate-50 print:border-slate-300">{facValue}%</td>
                                             <td className="py-1 px-4 text-center font-medium border-r border-slate-50 print:border-slate-300">{facArea.toFixed(1)} m²</td>
+                                            <td className="border-r border-slate-50 print:border-slate-300"></td>
                                             <td></td>
                                             </tr>
                                         );
@@ -1676,18 +1784,20 @@
                                         <tr className="text-[10px] bg-slate-50 text-slate-600 font-bold border border-slate-200 print:border-black print:bg-white print:text-black">
                                         <td colSpan={4} className="py-2 px-4 text-right uppercase border-r border-slate-200 print:border-black">Subtotal Netto {f.name} <span className="normal-case italic opacity-75">(tanpa luasan faktor tambahan)</span></td>
                                         <td className="py-2 px-4 text-center font-black border-r border-slate-200 print:border-black">{f.netto.toFixed(1)} m²</td>
+                                        <td className="py-2 px-4 text-center font-black border-r border-slate-200 print:border-black">{f.occupants} <span className="text-[9px] font-medium normal-case">org</span></td>
                                         <td></td>
                                         </tr>
                                         <tr className="text-[10px] bg-indigo-50 text-indigo-900 font-black border border-indigo-100 print:bg-slate-100 print:border-black print:text-black">
                                         <td colSpan={4} className="py-2.5 px-4 text-right uppercase border-r border-indigo-100 print:border-black">Total Luas Bruto {f.name}</td>
                                         <td className="py-2.5 px-4 text-center border-r border-indigo-100 print:border-black">{f.bruto.toFixed(1)} m²</td>
-                                        <td></td>
+                                        <td colSpan={2}></td>
                                         </tr>
                                     </React.Fragment>
                                     ))}
                                     <tr className="text-[11px] bg-slate-800 text-white font-black border border-slate-800 print:bg-slate-200 print:border-black print:text-black">
-                                        <td colSpan={4} className="py-3 px-4 text-right uppercase border-r border-slate-700 print:border-black">TOTAL GFA {b.name}</td>
+                                        <td colSpan={4} className="py-3 px-4 text-right uppercase border-r border-slate-700 print:border-black">TOTAL GFA & PENGHUNI {b.name}</td>
                                         <td className="py-3 px-4 text-center text-sm border-r border-slate-700 print:border-black">{b.bruto.toFixed(1)} m²</td>
+                                        <td className="py-3 px-4 text-center text-sm border-r border-slate-700 print:border-black">{b.occupants} <span className="text-[10px] font-medium normal-case">org</span></td>
                                         <td className="py-3 px-4 text-left opacity-80">Footprint: {b.footprint.toFixed(1)} m²</td>
                                     </tr>
                                 </tbody>
