@@ -105,8 +105,8 @@
 
         // Status Awal Aplikasi (Sudah mendukung Multi-Building)
         const INITIAL_APP_STATE = {
-          projectName: 'Masterplan Pusat Pemerintahan',
-          projectLocation: 'Ibu Kota Nusantara',
+          projectName: 'Nama Proyek',
+          projectLocation: 'Lokasi Proyek',
           landArea: 5000,
           kdbLimit: 60,
           ktbLimit: 70,
@@ -770,7 +770,6 @@
             };
 
             try {
-              // Menggunakan File Picker Standar untuk memunculkan dialog "Save As"
               if (window.showSaveFilePicker) {
                 const fileHandle = await window.showSaveFilePicker({ 
                     suggestedName: defaultFileName, 
@@ -784,7 +783,6 @@
                 fallbackDownload();
               }
             } catch (error) { 
-              // Jika user membatalkan (AbortError) jangan lakukan apa-apa, jika error lain (diblokir browser), gunakan fallback
               if (error.name !== 'AbortError') fallbackDownload(); 
             }
           }, [appState, projectName, showAlert]);
@@ -1770,6 +1768,8 @@
                   </div>
                 </div>
               )}
+
+              <footer className="max-w-6xl mx-auto px-4 py-8 mt-4 text-center text-[11px] font-bold text-slate-400 tracking-wider print:hidden">© 2026 AfifHW. Powered by Gemini AI</footer>
             </div>
           );
         };
