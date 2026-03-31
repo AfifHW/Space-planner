@@ -60,7 +60,7 @@
             PieChart, Palette, Settings2, AlertTriangle, CheckCircle2, LandPlot,
             Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
             MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
-            Building, FilePlus, Sparkles, Loader2
+            Building, FilePlus, Sparkles, Loader2, MoveRight
         } = lucide;
         // Penanganan duplikasi alias di Lucide
         const MapIcon = lucide.Map; 
@@ -263,11 +263,14 @@
           const [dragOverBuildingIdx, setDragOverBuildingIdx] = useState(null);
           const [duplicateModal, setDuplicateModal] = useState({ isOpen: false, floorId: null, count: 1 });
           const [duplicateBuildingModal, setDuplicateBuildingModal] = useState({ isOpen: false, buildingId: null, count: 1 });
+          const [moveModal, setMoveModal] = useState({ isOpen: false, targetFloorId: '' });
+          const [selectedRoomIds, setSelectedRoomIds] = useState([]);
           const [reportSortBy, setReportSortBy] = useState('default');
           const [isExportingExcel, setIsExportingExcel] = useState(false);
           const [isPrinting, setIsPrinting] = useState(false);
           const [isAutosaving, setIsAutosaving] = useState(false);
           const [aiLoadingState, setAiLoadingState] = useState({});
+          const [focusRoomId, setFocusRoomId] = useState(null);
 
           const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
 
@@ -304,8 +307,19 @@
             return () => clearTimeout(timeoutId);
           }, [appState]);
 
-          const referenceSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.notes).filter(n => n && n.trim() !== ''))), [rooms]);
-          const roomNameSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.label).filter(n => n && n.trim() !== '' && n !== 'Ruang Baru'))), [rooms]);
+          const referenceSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.notes).filter(n => n && n.trim() !== ''))).slice(0, 3), [rooms]);
+          const roomNameSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.label).filter(n => n && n.trim() !== '' && n !== 'Ruang Baru'))).slice(0, 3), [rooms]);
+
+          // Focus effect untuk ruangan yang baru saja ditambahkan
+          useEffect(() => {
+            if (focusRoomId) {
+              const el = document.getElementById(`room-name-input-${focusRoomId}`);
+              if (el) {
+                el.focus();
+                setFocusRoomId(null);
+              }
+            }
+          }, [rooms, focusRoomId]);
 
           // STATS CALCULATION (Updated untuk total penghuni)
           const stats = useMemo(() => {
@@ -695,18 +709,59 @@
           };
 
           const addRoom = useCallback((fId) => {
+            const newRoomId = Math.random().toString(36).substr(2, 9);
             setAppState(prev => ({
                ...prev,
-               rooms: [...prev.rooms, { id: Math.random().toString(36).substr(2, 9), label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '', occupants: '' }]
+               rooms: [...prev.rooms, { id: newRoomId, label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '', occupants: '' }]
             }));
             setCollapsedFloors(prev => ({ ...prev, [fId]: false }));
+            setFocusRoomId(newRoomId);
           }, [setAppState]);
 
           const updateRoom = (id, field, value) => {
             setAppState(prev => ({ ...prev, rooms: prev.rooms.map(r => r.id === id ? { ...r, [field]: value } : r) }));
           };
 
-          const removeRoom = (id) => setAppState(prev => ({ ...prev, rooms: prev.rooms.filter(r => r.id !== id) }));
+          const removeRoom = (id) => {
+            setAppState(prev => ({ ...prev, rooms: prev.rooms.filter(r => r.id !== id) }));
+            setSelectedRoomIds(prev => prev.filter(selectedId => selectedId !== id));
+          };
+
+          // SISTEM BULK ACTION (Seleksi Banyak Ruang)
+          const toggleRoomSelection = (roomId) => {
+              setSelectedRoomIds(prev => prev.includes(roomId) ? prev.filter(id => id !== roomId) : [...prev, roomId]);
+          };
+
+          const toggleAllRoomsInFloor = (floorId, floorRoomIds) => {
+              const allSelected = floorRoomIds.length > 0 && floorRoomIds.every(id => selectedRoomIds.includes(id));
+              if (allSelected) {
+                  setSelectedRoomIds(prev => prev.filter(id => !floorRoomIds.includes(id)));
+              } else {
+                  setSelectedRoomIds(prev => [...new Set([...prev, ...floorRoomIds])]);
+              }
+          };
+
+          const confirmMoveRooms = () => {
+              if (!moveModal.targetFloorId || selectedRoomIds.length === 0) return;
+              setAppState(prev => ({
+                  ...prev,
+                  rooms: prev.rooms.map(r => selectedRoomIds.includes(r.id) ? { ...r, floorId: moveModal.targetFloorId } : r)
+              }));
+              setSelectedRoomIds([]);
+              setMoveModal({ isOpen: false, targetFloorId: '' });
+          };
+
+          const bulkDeleteRooms = (floorId) => {
+              const idsToDelete = selectedRoomIds.filter(id => rooms.find(r => r.id === id)?.floorId === floorId);
+              if (idsToDelete.length === 0) return;
+              showConfirm(`Hapus ${idsToDelete.length} ruangan yang dipilih secara permanen?`, () => {
+                  setAppState(prev => ({
+                      ...prev,
+                      rooms: prev.rooms.filter(r => !idsToDelete.includes(r.id))
+                  }));
+                  setSelectedRoomIds(prev => prev.filter(id => !idsToDelete.includes(id)));
+              }, "Hapus Banyak Ruangan");
+          };
 
           const sortRoomsInFloor = useCallback((floorId, sortBy) => {
             setAppState(prev => {
@@ -1537,9 +1592,32 @@
 
                                       {!collapsedFloors[f.id] && (
                                         <div className="overflow-x-auto">
+                                          {selectedRoomIds.some(id => rooms.find(r => r.id === id)?.floorId === f.id) && (
+                                            <div className="bg-indigo-50/90 px-4 py-3 border-b border-indigo-100 flex justify-between items-center animate-in fade-in duration-200">
+                                              <span className="text-xs font-black text-indigo-800 uppercase tracking-widest">
+                                                {selectedRoomIds.filter(id => rooms.find(r => r.id === id)?.floorId === f.id).length} Ruang Terpilih
+                                              </span>
+                                              <div className="flex gap-2">
+                                                <button onClick={() => setMoveModal({ isOpen: true, targetFloorId: '' })} className="flex items-center gap-1.5 text-xs font-bold bg-white text-indigo-600 px-4 py-2 rounded-lg border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 shadow-sm transition-all">
+                                                  {MoveRight && <MoveRight className="w-4 h-4" />} Pindahkan Ruang
+                                                </button>
+                                                <button onClick={() => bulkDeleteRooms(f.id)} className="flex items-center gap-1.5 text-xs font-bold bg-white text-rose-600 px-4 py-2 rounded-lg border border-rose-200 hover:bg-rose-50 hover:border-rose-300 shadow-sm transition-all">
+                                                  {Trash2 && <Trash2 className="w-4 h-4" />} Hapus
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )}
                                           <table className="w-full text-sm">
                                             <thead className="text-[10px] font-black text-slate-400 uppercase bg-slate-50/30 border-b border-slate-100">
                                               <tr>
+                                                <th className="py-3 px-3 w-10 text-center">
+                                                  <input 
+                                                    type="checkbox" 
+                                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                    checked={rooms.filter(r => r.floorId === f.id).length > 0 && rooms.filter(r => r.floorId === f.id).every(r => selectedRoomIds.includes(r.id))}
+                                                    onChange={() => toggleAllRoomsInFloor(f.id, rooms.filter(r => r.floorId === f.id).map(r => r.id))}
+                                                  />
+                                                </th>
                                                 <th className="py-3 px-4 text-left w-24 cursor-pointer hover:text-indigo-600 group select-none" onClick={() => sortRoomsInFloor(f.id, 'zone')}>
                                                   <div className="flex items-center gap-1">Zoning {ArrowUpDown && <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-100" />}</div>
                                                 </th>
@@ -1557,21 +1635,30 @@
                                             <tbody className="divide-y divide-slate-100">
                                               {rooms.filter(r => r.floorId === f.id).map((room) => {
                                                 const z = zones.find(z => z.id === room.zoneId) || zones[0];
+                                                const isSelected = selectedRoomIds.includes(room.id);
                                                 return (
-                                                  <tr key={room.id} className="group hover:bg-slate-50/30">
+                                                  <tr key={room.id} className={`group hover:bg-slate-50/50 transition-colors ${isSelected ? 'bg-indigo-50/30' : ''}`}>
+                                                    <td className="py-3 px-3 text-center">
+                                                      <input 
+                                                        type="checkbox" 
+                                                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                        checked={isSelected}
+                                                        onChange={() => toggleRoomSelection(room.id)}
+                                                      />
+                                                    </td>
                                                     <td className="py-3 px-4"><select value={room.zoneId} onChange={(e) => updateRoom(room.id, 'zoneId', e.target.value)} className={`text-[9px] font-black rounded-full px-2 py-1 border-none cursor-pointer w-full ${getZoneStyle(z.colorId).color}`}>{zones.map(z => (<option key={z.id} value={z.id}>{z.label}</option>))}</select></td>
-                                                    <td className="py-3 px-2"><input type="text" list="room-name-options" value={room.label} onChange={(e) => updateRoom(room.id, 'label', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-transparent border-none font-medium focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
+                                                    <td className="py-3 px-2"><input id={`room-name-input-${room.id}`} type="text" list="room-name-options" value={room.label} onChange={(e) => updateRoom(room.id, 'label', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-transparent border-none font-medium focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
                                                     <td className="py-3 px-2"><input type="number" value={room.count} onChange={(e) => updateRoom(room.id, 'count', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
                                                     <td className="py-3 px-2"><input type="number" step="0.1" value={room.std} onChange={(e) => updateRoom(room.id, 'std', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
                                                     <td className="py-3 px-4 text-center font-bold text-slate-700">{((Number(room.count) || 0) * (Number(room.std) || 0)).toFixed(1)}</td>
                                                     <td className="py-3 px-2"><input type="number" value={room.occupants || ''} onChange={(e) => updateRoom(room.id, 'occupants', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} placeholder="-" className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:border-indigo-300 focus:bg-white rounded-lg text-center font-bold py-1 px-1 transition-colors" /></td>
                                                     <td className="py-3 px-2"><input type="text" list="reference-options" value={room.notes || ''} onChange={(e) => updateRoom(room.id, 'notes', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} placeholder="Ref. standar..." className="w-full bg-transparent border-none font-medium text-slate-500 text-[11px] italic focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
-                                                    <td className="py-3 px-2 text-center"><button onClick={() => removeRoom(room.id)} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100">{X && <X className="w-4 h-4" />}</button></td>
+                                                    <td className="py-3 px-2 text-center"><button onClick={() => removeRoom(room.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">{X && <X className="w-4 h-4" />}</button></td>
                                                   </tr>
                                                 );
                                               })}
                                               <tr>
-                                                <td colSpan={8} className="py-3 px-6">
+                                                <td colSpan={9} className="py-3 px-6">
                                                   <button onClick={() => addRoom(f.id)} className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100/80 border border-dashed border-indigo-300 rounded-xl transition-all">
                                                     {PlusCircle && <PlusCircle className="w-4 h-4" />} Tambah Ruang Baru (Enter)
                                                   </button>
@@ -1580,7 +1667,7 @@
                                             </tbody>
                                             <tfoot>
                                               <tr className="bg-slate-50/50 text-[11px] font-black">
-                                                <td colSpan={4} className="py-3 px-6 text-right text-slate-400 uppercase">Estimasi Bruto {f.name} (+{stats.floorDetails.find(fd => fd.id === f.id)?.totalMultiplier ?? 0}%)</td>
+                                                <td colSpan={5} className="py-3 px-6 text-right text-slate-400 uppercase">Estimasi Bruto {f.name} (+{stats.floorDetails.find(fd => fd.id === f.id)?.totalMultiplier ?? 0}%)</td>
                                                 <td className="py-3 px-4 text-center text-indigo-600">{stats.floorDetails.find(fd => fd.id === f.id)?.bruto.toFixed(1)} m²</td>
                                                 <td colSpan={3}></td>
                                               </tr>
@@ -1887,6 +1974,47 @@
                 </div>
               )}
 
+              {/* MODAL PINDAHKAN RUANGAN (BULK MOVE) */}
+              {moveModal.isOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+                  <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                        {MoveRight && <MoveRight className="w-4 h-4 text-indigo-500" />} Pindahkan Ruang
+                      </h3>
+                      <button onClick={() => setMoveModal({ isOpen: false, targetFloorId: '' })} className="text-slate-400 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 p-1.5 rounded-full transition-colors">{X && <X className="w-4 h-4" />}</button>
+                    </div>
+                    
+                    <p className="text-xs text-slate-600 mb-6 font-medium leading-relaxed">
+                      Pilih lantai tujuan untuk memindahkan <strong>{selectedRoomIds.length} ruangan</strong> yang telah Anda tandai.
+                    </p>
+                    
+                    <div className="mb-6">
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Lantai Tujuan</label>
+                      <select 
+                        value={moveModal.targetFloorId} 
+                        onChange={(e) => setMoveModal(prev => ({ ...prev, targetFloorId: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-indigo-600 focus:ring-2 focus:ring-indigo-400 outline-none cursor-pointer"
+                      >
+                        <option value="" disabled>-- Pilih Lantai Tujuan --</option>
+                        {buildings.map(b => (
+                          <optgroup key={b.id} label={`🏢 ${b.name}`}>
+                            {floors.filter(f => f.buildingId === b.id).map(f => (
+                              <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <button onClick={() => setMoveModal({ isOpen: false, targetFloorId: '' })} className="flex-1 py-3 rounded-xl text-xs font-black bg-slate-100 text-slate-600 hover:bg-slate-200 uppercase tracking-widest">Batal</button>
+                      <button onClick={confirmMoveRooms} disabled={!moveModal.targetFloorId} className="flex-[1.5] py-3 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 uppercase tracking-widest shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all">Pindahkan</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* MODAL DIALOG UMUM */}
               {dialog.isOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
@@ -1916,6 +2044,10 @@
                   </div>
                 </div>
               )}
+
+              <footer className="max-w-6xl mx-auto px-4 py-8 mt-auto text-center text-[11px] font-bold text-slate-400 tracking-wider print:hidden">
+                © 2026 Afif HW - Powered by Gemini Ai
+              </footer>
             </div>
           );
         };
