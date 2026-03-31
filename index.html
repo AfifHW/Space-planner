@@ -1,0 +1,1786 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schematic Space Planner</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: {} }
+        }
+    </script>
+    
+    <!-- React & ReactDOM (Menggunakan versi stabil cdnjs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Fix untuk lucide-react UMD -->
+    <script>
+        window.react = window.React;
+        globalThis.react = window.React;
+    </script>
+    
+    <!-- Babel Standalone dengan preset react eksplisit -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" crossorigin></script>
+    
+    <!-- Lucide Icons React -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.344.0/dist/umd/lucide-react.min.js" crossorigin></script>
+
+    <style>
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            margin: 0;
+            padding: 0;
+        }
+        #root {
+            width: 100%;
+            min-height: 100vh;
+        }
+        #fallback-loading {
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; font-family: sans-serif; font-weight: bold;
+            background: #f8fafc; color: #475569;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans pb-20 print:bg-white print:pb-0">
+    
+    <!-- Root Element React -->
+    <div id="root">
+        <div id="fallback-loading">Memuat Aplikasi... (Jika macet, periksa koneksi internet)</div>
+    </div>
+
+    <!-- Perhatikan penambahan data-presets="react" -->
+    <script type="text/babel" data-presets="react">
+        // 1. Ekstrak Hooks dari React
+        const { useState, useMemo, useEffect, useCallback, useRef } = window.React;
+        
+        // 2. Ekstrak Icon dari LucideReact secara aman
+        const lucide = window.lucideReact || window.LucideReact || {};
+        const {
+            Users, Layout, Settings, Calculator, FileText, Plus, Trash2, Info,
+            ChevronRight, ChevronDown, PlusCircle, X, Layers, Building2,
+            PieChart, Palette, Settings2, AlertTriangle, CheckCircle2, LandPlot,
+            Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
+            MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
+            Building
+        } = lucide;
+        // Penanganan duplikasi alias di Lucide
+        const MapIcon = lucide.Map; 
+        const MapComponent = lucide.Map; 
+
+        // 3. Error Boundary Component untuk menangkap error UI/Render
+        class ErrorBoundary extends React.Component {
+          constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+          static getDerivedStateFromError(error) { return { hasError: true, error }; }
+          render() {
+            if (this.state.hasError) {
+              return (
+                <div className="p-8 text-rose-600 bg-rose-50 min-h-screen font-mono">
+                  <h1 className="text-2xl font-bold mb-4">Ups! Terjadi Kesalahan Render.</h1>
+                  <pre className="bg-white p-4 rounded border border-rose-200 overflow-auto text-sm">{this.state.error.toString()}</pre>
+                </div>
+              );
+            }
+            return this.props.children;
+          }
+        }
+
+        const ZONE_COLORS = [
+          { id: 'blue', color: 'bg-blue-100 text-blue-700', border: 'border-blue-200' },
+          { id: 'emerald', color: 'bg-emerald-100 text-emerald-700', border: 'border-emerald-200' },
+          { id: 'purple', color: 'bg-purple-100 text-purple-700', border: 'border-purple-200' },
+          { id: 'amber', color: 'bg-amber-100 text-amber-700', border: 'border-amber-200' },
+          { id: 'rose', color: 'bg-rose-100 text-rose-700', border: 'border-rose-200' },
+          { id: 'indigo', color: 'bg-indigo-100 text-indigo-700', border: 'border-indigo-200' },
+          { id: 'slate', color: 'bg-slate-100 text-slate-700', border: 'border-slate-200' },
+        ];
+
+        const DEFAULT_REFERENCES = [];
+        const DEFAULT_ROOM_NAMES = [];
+
+        // Status Awal Aplikasi (Sudah mendukung Multi-Building)
+        const INITIAL_APP_STATE = {
+          projectName: 'Masterplan Pusat Pemerintahan',
+          projectLocation: 'Ibu Kota Nusantara',
+          landArea: 5000,
+          kdbLimit: 60,
+          ktbLimit: 70,
+          kdhLimit: 20, 
+          klbLimit: 3.0,
+          maxFloorsLimit: 20, 
+          
+          factors: [
+            { id: 'fac1', label: 'Sirkulasi', defaultVal: 25 },
+            { id: 'fac2', label: 'Servis', defaultVal: 2.5 },
+            { id: 'fac3', label: 'MEP', defaultVal: 2.5 }
+          ],
+          zones: [
+            { id: 'z1', label: 'Publik', colorId: 'blue' },
+            { id: 'z2', label: 'Semi-Publik', colorId: 'emerald' },
+            { id: 'z3', label: 'Privat', colorId: 'purple' }
+          ],
+          
+          buildings: [
+            { id: 'b1', name: 'Gedung Utama', kdbFloorId: 'f1', ktbFloorId: '' },
+            { id: 'b2', name: 'Gedung Penunjang', kdbFloorId: 'f3', ktbFloorId: '' }
+          ],
+          floors: [
+            { id: 'f1', buildingId: 'b1', name: 'Lantai 1', isBasement: false, floorHeight: 4.0, factorValues: { fac1: 25, fac2: 2.5, fac3: 2.5 } },
+            { id: 'f2', buildingId: 'b1', name: 'Lantai 2', isBasement: false, floorHeight: 4.0, factorValues: { fac1: 25, fac2: 2.5, fac3: 2.5 } },
+            { id: 'f3', buildingId: 'b2', name: 'Lantai Dasar', isBasement: false, floorHeight: 4.0, factorValues: { fac1: 20, fac2: 2.0, fac3: 2.0 } }
+          ],
+          rooms: [
+            { id: 'r1', label: 'Lobby & Resepsionis', floorId: 'f1', zoneId: 'z1', count: 1, std: 60, notes: '' },
+            { id: 'r2', label: 'Ruang Kepala', floorId: 'f2', zoneId: 'z3', count: 1, std: 40, notes: '' },
+            { id: 'r3', label: 'Ruang Rapat Bersama', floorId: 'f3', zoneId: 'z2', count: 2, std: 50, notes: '' }
+          ]
+        };
+
+        const useUndoableState = (initialState) => {
+          const [state, setState] = useState(initialState);
+          const [past, setPast] = useState([]);
+          const [future, setFuture] = useState([]);
+
+          const set = useCallback((newStateUpdater) => {
+            setState(prev => {
+              const nextState = typeof newStateUpdater === 'function' ? newStateUpdater(prev) : newStateUpdater;
+              if (JSON.stringify(prev) !== JSON.stringify(nextState)) {
+                setPast(p => {
+                  const newPast = [...p, prev];
+                  return newPast.length > 50 ? newPast.slice(newPast.length - 50) : newPast; 
+                });
+                setFuture([]); 
+              }
+              return nextState;
+            });
+          }, []);
+
+          const undo = useCallback(() => {
+            setPast(p => {
+              if (p.length === 0) return p;
+              const previous = p[p.length - 1];
+              setState(currentState => {
+                setFuture(f => [currentState, ...f]);
+                return previous;
+              });
+              return p.slice(0, p.length - 1);
+            });
+          }, []);
+
+          const redo = useCallback(() => {
+            setFuture(f => {
+              if (f.length === 0) return f;
+              const next = f[0];
+              setState(currentState => {
+                setPast(p => [...p, currentState]);
+                return next;
+              });
+              return f.slice(1);
+            });
+          }, []);
+
+          return [state, set, undo, redo, past.length > 0, future.length > 0];
+        };
+
+        const App = () => {
+          const [appState, setAppState, undo, redo, canUndo, canRedo] = useUndoableState(INITIAL_APP_STATE);
+          
+          const { projectName, projectLocation, landArea, kdbLimit, ktbLimit, kdhLimit, klbLimit, maxFloorsLimit, factors, zones, buildings, floors, rooms } = appState;
+
+          // Global Setters
+          const setProjectName = (val) => setAppState(prev => ({ ...prev, projectName: typeof val === 'function' ? val(prev.projectName) : val }));
+          const setProjectLocation = (val) => setAppState(prev => ({ ...prev, projectLocation: typeof val === 'function' ? val(prev.projectLocation) : val }));
+          const setLandArea = (val) => setAppState(prev => ({ ...prev, landArea: typeof val === 'function' ? val(prev.landArea) : val }));
+          const setKdbLimit = (val) => setAppState(prev => ({ ...prev, kdbLimit: typeof val === 'function' ? val(prev.kdbLimit) : val }));
+          const setKtbLimit = (val) => setAppState(prev => ({ ...prev, ktbLimit: typeof val === 'function' ? val(prev.ktbLimit) : val }));
+          const setKdhLimit = (val) => setAppState(prev => ({ ...prev, kdhLimit: typeof val === 'function' ? val(prev.kdhLimit) : val }));
+          const setKlbLimit = (val) => setAppState(prev => ({ ...prev, klbLimit: typeof val === 'function' ? val(prev.klbLimit) : val }));
+          const setMaxFloorsLimit = (val) => setAppState(prev => ({ ...prev, maxFloorsLimit: typeof val === 'function' ? val(prev.maxFloorsLimit) : val }));
+          const setFactors = (val) => setAppState(prev => ({ ...prev, factors: typeof val === 'function' ? val(prev.factors) : val }));
+          const setZones = (val) => setAppState(prev => ({ ...prev, zones: typeof val === 'function' ? val(prev.zones) : val }));
+
+          // UI State
+          const [activeTab, setActiveTab] = useState('input');
+          const [activeBuildingId, setActiveBuildingId] = useState(buildings[0]?.id || null);
+          const [showZoneManager, setShowZoneManager] = useState(false);
+          const [showFactorManager, setShowFactorManager] = useState(false);
+          const [lastActiveFloorId, setLastActiveFloorId] = useState(null);
+          const [collapsedFloors, setCollapsedFloors] = useState({});
+          const [draggedFloorIdx, setDraggedFloorIdx] = useState(null);
+          const [dragOverFloorIdx, setDragOverFloorIdx] = useState(null);
+          const [draggedBuildingIdx, setDraggedBuildingIdx] = useState(null);
+          const [dragOverBuildingIdx, setDragOverBuildingIdx] = useState(null);
+          const [duplicateModal, setDuplicateModal] = useState({ isOpen: false, floorId: null, count: 1 });
+          const [duplicateBuildingModal, setDuplicateBuildingModal] = useState({ isOpen: false, buildingId: null, count: 1 });
+          const [reportSortBy, setReportSortBy] = useState('default');
+          const [isExportingExcel, setIsExportingExcel] = useState(false);
+          const [isPrinting, setIsPrinting] = useState(false);
+
+          const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+
+          const showAlert = useCallback((message, title = "Informasi") => {
+            setDialog({ isOpen: true, title, message, type: 'alert', onConfirm: null });
+          }, []);
+
+          const showConfirm = useCallback((message, onConfirm, title = "Konfirmasi") => {
+            setDialog({ isOpen: true, title, message, type: 'confirm', onConfirm });
+          }, []);
+
+          const fileInputRef = useRef(null);
+          const getZoneStyle = (colorId) => ZONE_COLORS.find(c => c.id === colorId) || ZONE_COLORS[0];
+
+          useEffect(() => {
+            if (!activeBuildingId && buildings.length > 0) {
+              setActiveBuildingId(buildings[0].id);
+            } else if (activeBuildingId && !buildings.find(b => b.id === activeBuildingId)) {
+              setActiveBuildingId(buildings[0]?.id || null);
+            }
+          }, [buildings, activeBuildingId]);
+
+          const referenceSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.notes).filter(n => n && n.trim() !== ''))), [rooms]);
+          const roomNameSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.label).filter(n => n && n.trim() !== '' && n !== 'Ruang Baru'))), [rooms]);
+
+          // STATS CALCULATION
+          const stats = useMemo(() => {
+            const safeNum = (val) => Number(val) || 0;
+            const lArea = safeNum(landArea);
+            const kLimit = safeNum(kdbLimit);
+            const ktLimit = safeNum(ktbLimit);
+            const klLimit = safeNum(klbLimit);
+
+            let globalNettoTotal = 0;
+            let globalBrutoTotal = 0;
+            let globalFootprintArea = 0;
+            let globalBasementFootprintArea = 0;
+            const globalFactorAreas = {};
+            factors.forEach(fac => globalFactorAreas[fac.id] = 0);
+
+            const floorDetails = floors.map(f => {
+              const nettoFloor = rooms.filter(r => r.floorId === f.id).reduce((acc, r) => acc + (safeNum(r.count) * safeNum(r.std)), 0);
+              
+              let totalMultiplier = 0;
+              factors.forEach(fac => {
+                const val = safeNum(f.factorValues?.[fac.id]);
+                totalMultiplier += val;
+                globalFactorAreas[fac.id] += (nettoFloor * val) / 100;
+              });
+
+              const brutoFloor = nettoFloor * (1 + totalMultiplier / 100);
+              globalNettoTotal += nettoFloor;
+              globalBrutoTotal += brutoFloor;
+              
+              return { ...f, netto: nettoFloor, bruto: brutoFloor, totalMultiplier };
+            });
+
+            const buildingDetails = buildings.map(b => {
+              const bFloors = floorDetails.filter(fd => fd.buildingId === b.id);
+              const bNetto = bFloors.reduce((acc, fd) => acc + fd.netto, 0);
+              const bBruto = bFloors.reduce((acc, fd) => acc + fd.bruto, 0);
+              const bFootprint = bFloors.find(fd => fd.id === b.kdbFloorId)?.bruto || 0;
+              const bBasementFootprint = bFloors.find(fd => fd.id === b.ktbFloorId)?.bruto || 0;
+              
+              globalFootprintArea += bFootprint;
+              globalBasementFootprintArea += bBasementFootprint;
+
+              const heightAbove = bFloors.filter(f => !f.isBasement).reduce((acc, f) => acc + Math.abs(safeNum(f.floorHeight)), 0);
+              const depthBelow = bFloors.filter(f => f.isBasement).reduce((acc, f) => acc + Math.abs(safeNum(f.floorHeight)), 0);
+
+              const bZoneBreakdown = zones.map(z => {
+                let zNettoArea = 0; let zBrutoArea = 0;
+                rooms.filter(r => r.zoneId === z.id && bFloors.some(f => f.id === r.floorId)).forEach(r => {
+                  const rNetto = safeNum(r.count) * safeNum(r.std);
+                  zNettoArea += rNetto;
+                  const floor = floors.find(f => f.id === r.floorId);
+                  let multiplier = 0;
+                  if (floor && floor.factorValues) { factors.forEach(fac => multiplier += safeNum(floor.factorValues[fac.id])); }
+                  zBrutoArea += rNetto * (1 + multiplier / 100);
+                });
+                return { id: z.id, name: z.label, area: zNettoArea, brutoArea: zBrutoArea, style: getZoneStyle(z.colorId) };
+              });
+
+              return { ...b, floors: bFloors, netto: bNetto, bruto: bBruto, footprint: bFootprint, basementFootprint: bBasementFootprint, heightAbove, depthBelow, zoneBreakdown: bZoneBreakdown };
+            });
+
+            const currentKDB = lArea > 0 ? (globalFootprintArea / lArea) * 100 : 0;
+            const currentKTB = lArea > 0 ? (globalBasementFootprintArea / lArea) * 100 : 0;
+            const currentKLB = lArea > 0 ? globalBrutoTotal / lArea : 0;
+            
+            const maxAllowedKLBArea = lArea * klLimit;
+            const maxAllowedKDBArea = (kLimit / 100) * lArea;
+            const maxAllowedKTBArea = (ktLimit / 100) * lArea;
+            const minRequiredKDHArea = (safeNum(kdhLimit) / 100) * lArea;
+            
+            const zoneBreakdown = zones.map(z => {
+              let nettoArea = 0; let brutoArea = 0;
+              rooms.filter(r => r.zoneId === z.id).forEach(r => {
+                const rNetto = safeNum(r.count) * safeNum(r.std);
+                nettoArea += rNetto;
+                const floor = floors.find(f => f.id === r.floorId);
+                let multiplier = 0;
+                if (floor && floor.factorValues) { factors.forEach(fac => multiplier += safeNum(floor.factorValues[fac.id])); }
+                brutoArea += rNetto * (1 + multiplier / 100);
+              });
+              return { id: z.id, name: z.label, area: nettoArea, brutoArea: brutoArea, style: getZoneStyle(z.colorId) };
+            });
+
+            return { 
+              nettoTotal: globalNettoTotal, 
+              brutoTotal: globalBrutoTotal, 
+              footprint: globalFootprintArea,
+              basementFootprint: globalBasementFootprintArea,
+              floorDetails, 
+              buildingDetails,
+              zoneBreakdown,
+              currentKDB, currentKTB, currentKLB,
+              maxAllowedKLBArea, maxAllowedKDBArea, maxAllowedKTBArea, minRequiredKDHArea,
+              factorAreas: globalFactorAreas
+            };
+          }, [rooms, floors, buildings, zones, factors, landArea, ktbLimit, kdhLimit, klbLimit, kdbLimit]);
+
+          // ACTIONS
+          const addBuilding = () => {
+            const newId = `b${Date.now()}`;
+            const newFloorId = `f${Date.now()}`;
+            const initialFactors = {};
+            factors.forEach(fac => initialFactors[fac.id] = fac.defaultVal || 0);
+
+            setAppState(prev => ({
+              ...prev,
+              buildings: [...prev.buildings, { id: newId, name: `Gedung ${prev.buildings.length + 1}`, kdbFloorId: newFloorId, ktbFloorId: '' }],
+              floors: [...prev.floors, { id: newFloorId, buildingId: newId, name: 'Lantai Dasar', isBasement: false, floorHeight: 4.0, factorValues: initialFactors }]
+            }));
+            setActiveBuildingId(newId);
+          };
+
+          const updateBuilding = (id, field, value) => {
+            setAppState(prev => ({
+              ...prev,
+              buildings: prev.buildings.map(b => b.id === id ? { ...b, [field]: value } : b)
+            }));
+          };
+
+          const removeBuilding = (id) => {
+            if (buildings.length <= 1) {
+              showAlert("Proyek harus memiliki setidaknya 1 Gedung.", "Gagal Menghapus");
+              return;
+            }
+            showConfirm("Hapus gedung beserta seluruh lantai dan ruangannya?", () => {
+              setAppState(prev => {
+                const remainingFloors = prev.floors.filter(f => f.buildingId !== id);
+                const validFloorIds = remainingFloors.map(f => f.id);
+                return {
+                  ...prev,
+                  buildings: prev.buildings.filter(b => b.id !== id),
+                  floors: remainingFloors,
+                  rooms: prev.rooms.filter(r => validFloorIds.includes(r.floorId))
+                }
+              });
+            }, "Hapus Gedung");
+          };
+
+          const addFactor = () => {
+            const newId = `fac${Date.now()}`;
+            setAppState(prev => ({
+              ...prev,
+              factors: [...prev.factors, { id: newId, label: 'Faktor Baru', defaultVal: 0 }],
+              floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [newId]: 0 } }))
+            }));
+          };
+
+          const removeFactor = (id) => setFactors(prev => prev.filter(fac => fac.id !== id));
+          const updateFactor = (id, label) => setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, label } : fac));
+          const updateFactorDefault = (id, defaultVal) => {
+            setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, defaultVal: Number(defaultVal) } : fac));
+          };
+
+          const applyFactorToAllFloors = (factorId) => {
+            const factor = factors.find(f => f.id === factorId);
+            if (!factor) return;
+            const val = factor.defaultVal;
+            showConfirm(`Terapkan nilai persentase ${val}% untuk "${factor.label}" ke SEMUA lantai di SEMUA gedung? (Nilai manual sebelumnya akan tertimpa).`, () => {
+              setAppState(prev => ({
+                ...prev,
+                floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [factorId]: val } }))
+              }));
+            }, "Terapkan Global");
+          };
+
+          const updateFloorFactor = (floorId, factorId, value) => {
+            setAppState(prev => ({
+              ...prev,
+              floors: prev.floors.map(f => f.id === floorId ? { ...f, factorValues: { ...f.factorValues, [factorId]: value } } : f)
+            }));
+          };
+
+          const addZone = () => {
+            const newId = `z${Date.now()}`;
+            setZones(prev => [...prev, { id: newId, label: 'Zona Baru', colorId: 'slate' }]);
+          };
+
+          const removeZone = (id) => {
+            if (zones.length <= 1) return;
+            setAppState(prev => {
+              const newZones = prev.zones.filter(z => z.id !== id);
+              return { ...prev, zones: newZones, rooms: prev.rooms.map(r => r.zoneId === id ? { ...r, zoneId: newZones[0].id } : r) };
+            });
+          };
+
+          const updateZone = (id, field, value) => setZones(prev => prev.map(z => z.id === id ? { ...z, [field]: value } : z));
+
+          const addFloor = useCallback((position = 'bottom') => {
+            if(!activeBuildingId) return;
+            const bFloors = floors.filter(f => f.buildingId === activeBuildingId);
+            if (bFloors.length >= (Number(maxFloorsLimit) || 1)) return;
+
+            const newId = `f${Date.now()}`;
+            const initialFactors = {};
+            factors.forEach(fac => initialFactors[fac.id] = fac.defaultVal || 0);
+            
+            setAppState(prev => {
+              let maxLantai = 0;
+              prev.floors.filter(f => f.buildingId === activeBuildingId).forEach(f => {
+                const match = f.name.match(/^Lantai\s(\d+)$/i);
+                if (match) {
+                  const num = parseInt(match[1], 10);
+                  if (num > maxLantai) maxLantai = num;
+                }
+              });
+              
+              const newFloor = { id: newId, buildingId: activeBuildingId, name: `Lantai ${maxLantai + 1}`, isBasement: false, floorHeight: 4.0, factorValues: initialFactors };
+              const newFloors = [...prev.floors];
+              
+              if (position === 'top') {
+                const firstIdx = newFloors.findIndex(f => f.buildingId === activeBuildingId);
+                newFloors.splice(firstIdx >= 0 ? firstIdx : 0, 0, newFloor);
+              } else {
+                newFloors.push(newFloor);
+              }
+              return { ...prev, floors: newFloors };
+            });
+          }, [floors, maxFloorsLimit, factors, activeBuildingId, setAppState]);
+
+          const removeFloor = (id) => {
+            const floor = floors.find(f => f.id === id);
+            const bFloors = floors.filter(f => f.buildingId === floor.buildingId);
+            if (bFloors.length <= 1) { showAlert("Gedung harus memiliki setidaknya 1 Lantai.", "Gagal Menghapus"); return; }
+            
+            setAppState(prev => {
+              const newFloors = prev.floors.filter(f => f.id !== id);
+              return {
+                ...prev,
+                floors: newFloors,
+                rooms: prev.rooms.filter(r => r.floorId !== id),
+                buildings: prev.buildings.map(b => {
+                   if(b.id === floor.buildingId) {
+                      return {
+                         ...b,
+                         kdbFloorId: b.kdbFloorId === id ? newFloors.find(f=>f.buildingId===b.id)?.id : b.kdbFloorId,
+                         ktbFloorId: b.ktbFloorId === id ? '' : b.ktbFloorId
+                      }
+                   }
+                   return b;
+                })
+              };
+            });
+          };
+
+          const updateFloorConfig = (id, field, value) => {
+            setAppState(prev => ({
+              ...prev,
+              floors: prev.floors.map(f => {
+                if (f.id === id) {
+                  const updatedFloor = { ...f, [field]: value };
+                  if (field === 'name') {
+                    const lowerName = String(value).toLowerCase();
+                    if (lowerName.includes('basement') || lowerName.includes('bawah') || lowerName.includes('lower')) {
+                      updatedFloor.isBasement = true;
+                    } else if (lowerName.includes('lantai') || lowerName.includes('dasar') || lowerName.includes('atap')) {
+                      updatedFloor.isBasement = false;
+                    }
+                  }
+                  if (field === 'floorHeight') {
+                    if (Number(value) < 0) updatedFloor.isBasement = true;
+                    else if (Number(value) > 0 && updatedFloor.name.includes('Lantai')) updatedFloor.isBasement = false;
+                  }
+                  return updatedFloor;
+                }
+                return f;
+              })
+            }));
+          };
+
+          const confirmDuplicate = () => {
+            const { floorId, count } = duplicateModal;
+            if (!floorId || count < 1) return;
+
+            setAppState(prev => {
+              const floorToCopy = prev.floors.find(f => f.id === floorId);
+              if (!floorToCopy) return prev;
+
+              const bFloors = prev.floors.filter(f => f.buildingId === floorToCopy.buildingId);
+              const maxAllowed = (Number(prev.maxFloorsLimit) || 1) - bFloors.length;
+              const actualCount = Math.min(count, maxAllowed);
+              
+              if (actualCount <= 0) return prev;
+
+              const newFloorsToAdd = [];
+              const newRoomsToAdd = [];
+              let isStandardName = /^Lantai\s\d+$/i.test(floorToCopy.name.trim());
+              let maxLantai = 0;
+              
+              if (isStandardName) {
+                bFloors.forEach(f => {
+                  const match = f.name.match(/^Lantai\s(\d+)$/i);
+                  if (match) { const num = parseInt(match[1], 10); if (num > maxLantai) maxLantai = num; }
+                });
+              }
+
+              const roomsToCopy = prev.rooms.filter(r => r.floorId === floorId);
+
+              for (let i = 0; i < actualCount; i++) {
+                const newFloorId = `f${Date.now()}_${i}`; 
+                let nextFloorName = `${floorToCopy.name} (Copy ${i + 1})`;
+                if (isStandardName) nextFloorName = `Lantai ${maxLantai + 1 + i}`;
+
+                newFloorsToAdd.push({ ...floorToCopy, id: newFloorId, name: nextFloorName });
+                const copiedRooms = roomsToCopy.map(r => ({ ...r, id: Math.random().toString(36).substr(2, 9), floorId: newFloorId }));
+                newRoomsToAdd.push(...copiedRooms);
+              }
+
+              const floorIndex = prev.floors.findIndex(f => f.id === floorId);
+              const newFloors = [...prev.floors];
+              newFloors.splice(floorIndex + 1, 0, ...newFloorsToAdd);
+
+              return { ...prev, floors: newFloors, rooms: [...prev.rooms, ...newRoomsToAdd] };
+            });
+            setDuplicateModal({ isOpen: false, floorId: null, count: 1 });
+          };
+
+          const confirmDuplicateBuilding = () => {
+            const { buildingId, count } = duplicateBuildingModal;
+            if (!buildingId || count < 1) return;
+
+            setAppState(prev => {
+              const bToCopy = prev.buildings.find(b => b.id === buildingId);
+              if (!bToCopy) return prev;
+
+              const newBuildings = [];
+              const newFloors = [];
+              const newRooms = [];
+
+              const bFloors = prev.floors.filter(f => f.buildingId === buildingId);
+              const bRooms = prev.rooms.filter(r => bFloors.some(f => f.id === r.floorId));
+
+              for (let i = 0; i < count; i++) {
+                const newBId = `b${Date.now()}_${i}`;
+                const floorIdMap = {}; 
+
+                const copiedFloors = bFloors.map(f => {
+                  const newFId = `f${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                  floorIdMap[f.id] = newFId;
+                  return { ...f, id: newFId, buildingId: newBId };
+                });
+
+                const copiedRooms = bRooms.map(r => ({
+                  ...r,
+                  id: Math.random().toString(36).substr(2, 9),
+                  floorId: floorIdMap[r.floorId]
+                }));
+
+                newBuildings.push({
+                  ...bToCopy,
+                  id: newBId,
+                  name: `${bToCopy.name} (Copy ${i + 1})`,
+                  kdbFloorId: bToCopy.kdbFloorId ? floorIdMap[bToCopy.kdbFloorId] : '',
+                  ktbFloorId: bToCopy.ktbFloorId ? floorIdMap[bToCopy.ktbFloorId] : ''
+                });
+
+                newFloors.push(...copiedFloors);
+                newRooms.push(...copiedRooms);
+              }
+
+              return {
+                ...prev,
+                buildings: [...prev.buildings, ...newBuildings],
+                floors: [...prev.floors, ...newFloors],
+                rooms: [...prev.rooms, ...newRooms]
+              };
+            });
+            setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 });
+          };
+
+          const addRoom = useCallback((fId) => {
+            setAppState(prev => ({
+               ...prev,
+               rooms: [...prev.rooms, { id: Math.random().toString(36).substr(2, 9), label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '' }]
+            }));
+            setCollapsedFloors(prev => ({ ...prev, [fId]: false }));
+          }, [setAppState]);
+
+          const updateRoom = (id, field, value) => {
+            setAppState(prev => ({ ...prev, rooms: prev.rooms.map(r => r.id === id ? { ...r, [field]: value } : r) }));
+          };
+
+          const removeRoom = (id) => setAppState(prev => ({ ...prev, rooms: prev.rooms.filter(r => r.id !== id) }));
+
+          const sortRoomsInFloor = useCallback((floorId, sortBy) => {
+            setAppState(prev => {
+              const floorRooms = prev.rooms.filter(r => r.floorId === floorId);
+              if (sortBy === 'name') floorRooms.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+              else if (sortBy === 'zone') {
+                floorRooms.sort((a, b) => {
+                  const zoneA = prev.zones.find(z => z.id === a.zoneId)?.label || '';
+                  const zoneB = prev.zones.find(z => z.id === b.zoneId)?.label || '';
+                  if (zoneA === zoneB) return (a.label || '').localeCompare(b.label || '');
+                  return zoneA.localeCompare(zoneB);
+                });
+              }
+
+              const oldFloorRooms = prev.rooms.filter(r => r.floorId === floorId);
+              const isUnchanged = floorRooms.every((r, idx) => r.id === oldFloorRooms[idx].id);
+              if (isUnchanged) floorRooms.reverse();
+
+              const newRooms = [...prev.rooms];
+              let floorRoomIndex = 0;
+              for (let i = 0; i < newRooms.length; i++) {
+                if (newRooms[i].floorId === floorId) { newRooms[i] = floorRooms[floorRoomIndex]; floorRoomIndex++; }
+              }
+              return { ...prev, rooms: newRooms };
+            });
+          }, [setAppState]);
+
+          const toggleFloorCollapse = (floorId) => {
+            setCollapsedFloors(prev => ({ ...prev, [floorId]: !prev[floorId] }));
+          };
+
+          const handleDragStart = (e, idx) => {
+            setDraggedFloorIdx(idx);
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', idx);
+          };
+
+          const handleDragOver = (e, idx) => {
+            e.preventDefault(); 
+            e.dataTransfer.dropEffect = 'move';
+            if (dragOverFloorIdx !== idx) setDragOverFloorIdx(idx);
+          };
+
+          const handleDrop = (e, targetIdx) => {
+            e.preventDefault();
+            if (draggedFloorIdx !== null && draggedFloorIdx !== targetIdx) {
+              setAppState(prev => {
+                const newFloors = [...prev.floors];
+                const bFloors = newFloors.filter(f => f.buildingId === activeBuildingId);
+                const otherFloors = newFloors.filter(f => f.buildingId !== activeBuildingId);
+
+                const [movedFloor] = bFloors.splice(draggedFloorIdx, 1);
+                bFloors.splice(targetIdx, 0, movedFloor);
+                
+                let standardCounter = 1;
+                const reorderedBFloors = bFloors.map((floor) => {
+                  if (/^Lantai\s\d+$/i.test(floor.name.trim())) {
+                    const newName = `Lantai ${standardCounter}`;
+                    standardCounter++;
+                    return { ...floor, name: newName };
+                  }
+                  return floor;
+                });
+
+                return { ...prev, floors: [...otherFloors, ...reorderedBFloors] };
+              });
+            }
+            setDraggedFloorIdx(null);
+            setDragOverFloorIdx(null);
+          };
+
+          const handleDragEnd = () => {
+            setDraggedFloorIdx(null);
+            setDragOverFloorIdx(null);
+          };
+
+          const handleBuildingDragStart = (e, idx) => {
+            setDraggedBuildingIdx(idx);
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', idx);
+          };
+
+          const handleBuildingDragOver = (e, idx) => {
+            e.preventDefault(); 
+            e.dataTransfer.dropEffect = 'move';
+            if (dragOverBuildingIdx !== idx) setDragOverBuildingIdx(idx);
+          };
+
+          const handleBuildingDrop = (e, targetIdx) => {
+            e.preventDefault();
+            if (draggedBuildingIdx !== null && draggedBuildingIdx !== targetIdx) {
+              setAppState(prev => {
+                const newBuildings = [...prev.buildings];
+                const [movedBuilding] = newBuildings.splice(draggedBuildingIdx, 1);
+                newBuildings.splice(targetIdx, 0, movedBuilding);
+                return { ...prev, buildings: newBuildings };
+              });
+            }
+            setDraggedBuildingIdx(null);
+            setDragOverBuildingIdx(null);
+          };
+
+          const handleBuildingDragEnd = () => {
+            setDraggedBuildingIdx(null);
+            setDragOverBuildingIdx(null);
+          };
+
+          const handleRoomKeyDown = (e, floorId) => {
+            if (e.key === 'Enter') { e.preventDefault(); addRoom(floorId); }
+          };
+
+          useEffect(() => {
+            const handleKeyDown = (e) => {
+              if (e.ctrlKey || e.metaKey) {
+                if (e.key.toLowerCase() === 'z') {
+                  e.preventDefault(); 
+                  if (e.shiftKey) redo(); else undo();
+                  return;
+                }
+                if (e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+              }
+              if (activeTab !== 'input') return;
+              if (e.altKey && e.key.toLowerCase() === 'l') { e.preventDefault(); addFloor('bottom'); }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+          }, [activeTab, undo, redo, addFloor]);
+
+
+          // SAVE / LOAD / EXPORT
+          const handleSaveProject = useCallback(async () => {
+            const dataStr = JSON.stringify(appState, null, 2);
+            const defaultFileName = `${(projectName || 'Proyek_Tanpa_Nama').replace(/\s+/g, '_')}.json`;
+            const fallbackDownload = () => {
+              const blob = new Blob([dataStr], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url; link.download = defaultFileName; document.body.appendChild(link); link.click();
+              document.body.removeChild(link); URL.revokeObjectURL(url);
+              showAlert("File proyek telah diunduh otomatis. (Browser memblokir popup folder jika file HTML dibuka langsung secara lokal. Untuk selalu memunculkan pilihan folder, aktifkan opsi 'Selalu tanyakan lokasi unduhan' di pengaturan browser Anda).", "Informasi Unduhan");
+            };
+
+            try {
+              // Menggunakan File Picker Standar untuk memunculkan dialog "Save As"
+              if (window.showSaveFilePicker) {
+                const fileHandle = await window.showSaveFilePicker({ 
+                    suggestedName: defaultFileName, 
+                    types: [{ description: 'File Proyek (.json)', accept: { 'application/json': ['.json'] } }] 
+                });
+                const writable = await fileHandle.createWritable();
+                await writable.write(dataStr); 
+                await writable.close();
+                showAlert("Proyek berhasil disimpan di lokasi yang Anda pilih.", "Berhasil Disimpan");
+              } else {
+                fallbackDownload();
+              }
+            } catch (error) { 
+              // Jika user membatalkan (AbortError) jangan lakukan apa-apa, jika error lain (diblokir browser), gunakan fallback
+              if (error.name !== 'AbortError') fallbackDownload(); 
+            }
+          }, [appState, projectName, showAlert]);
+
+          const handleLoadProject = useCallback((e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              try {
+                let loadedState = JSON.parse(event.target.result);
+                if (!loadedState.buildings) {
+                   const defBId = 'b_migrated';
+                   loadedState.buildings = [{ id: defBId, name: 'Gedung Utama', kdbFloorId: loadedState.kdbFloorId, ktbFloorId: loadedState.ktbFloorId }];
+                   if(loadedState.floors) loadedState.floors = loadedState.floors.map(f => ({...f, buildingId: defBId}));
+                }
+                if (loadedState && loadedState.floors && loadedState.rooms && loadedState.factors && loadedState.buildings) {
+                  setAppState(loadedState);
+                  setActiveBuildingId(loadedState.buildings[0].id);
+                } else showAlert("Gagal memuat: File tidak valid atau struktur data korup.", "Error");
+              } catch (err) { showAlert("Gagal memuat: Format file harus berupa JSON yang valid.", "Error"); }
+            };
+            reader.readAsText(file);
+            e.target.value = null;
+          }, [setAppState, showAlert]);
+
+          const handlePrintPDF = useCallback(() => {
+            setIsPrinting(true);
+            const generatePDF = () => {
+              const element = document.getElementById('printable-report');
+              if (!element) { setIsPrinting(false); return; }
+              const opt = {
+                margin: [10, 10, 10, 10], filename: `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}.pdf`,
+                image: { type: 'jpeg', quality: 1.0 }, html2canvas: { scale: 3, useCORS: true, scrollY: 0, letterRendering: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+              };
+              window.html2pdf().set(opt).from(element).save().then(() => setIsPrinting(false));
+            };
+
+            if (window.html2pdf) {
+              generatePDF();
+            } else {
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+              script.onload = generatePDF;
+              script.onerror = () => { setIsPrinting(false); showAlert("Gagal memuat modul PDF.", "Error"); };
+              document.body.appendChild(script);
+            }
+          }, [projectName, showAlert]);
+
+          const handleExportExcel = useCallback(() => {
+            setIsExportingExcel(true);
+            const generateXLSX = () => {
+              try {
+                const wsData = [];
+                const borderAll = { top: { style: "thin", color: { rgb: "000000" } }, bottom: { style: "thin", color: { rgb: "000000" } }, left: { style: "thin", color: { rgb: "000000" } }, right: { style: "thin", color: { rgb: "000000" } } };
+                const styleHeader = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll };
+                const styleDataText = { alignment: { horizontal: "left", vertical: "center" }, border: borderAll };
+                const styleDataNumber = { alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
+                const styleDataNumberBold = { font: { bold: true }, alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
+                const styleTitle = { font: { bold: true, sz: 14 } }; const styleSubtitle = { font: { bold: true, sz: 11 } }; const styleBold = { font: { bold: true } }; const emptyBorder = { border: borderAll };
+                const c = (v, s) => ({ v: v !== undefined && v !== null ? v : "", t: typeof v === 'number' ? 'n' : 's', s });
+
+                wsData.push([c("LAPORAN PROGRAM RUANG DAN INTENSITAS LAHAN", styleTitle)]);
+                wsData.push([]);
+                wsData.push([c("INFORMASI PROYEK", styleSubtitle)]);
+                wsData.push([c("Nama Proyek", styleBold), c(projectName || '-')]);
+                wsData.push([c("Lokasi", styleBold), c(projectLocation || '-')]);
+                wsData.push([]);
+
+                wsData.push([c("PERHITUNGAN INTENSITAS LAHAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
+                wsData.push([c("Luas Lahan", styleDataText), c(Number(landArea), styleDataNumber), c("m²", styleDataNumber)]);
+                wsData.push([c(`KDB (Maks. ${kdbLimit}%)`, styleDataText), c(Number(stats.currentKDB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
+                wsData.push([c(`KTB (Maks. ${ktbLimit}%)`, styleDataText), c(Number(stats.currentKTB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
+                wsData.push([c(`KDH (Min. ${kdhLimit}%)`, styleDataText), c(Number(stats.minRequiredKDHArea.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsData.push([c(`KLB (Maks. ${klbLimit})`, styleDataText), c(Number(stats.currentKLB.toFixed(2)), styleDataNumber), c("", styleDataNumber)]);
+                wsData.push([]);
+
+                wsData.push([c("LUAS BANGUNAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
+                wsData.push([c("Total Luas Netto", styleDataText), c(Number(stats.nettoTotal.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsData.push([c("Add. Factors (Akumulasi)", styleDataText), c(Number(Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsData.push([c("TOTAL GFA", { ...styleDataText, font: { bold: true } }), c(Number(stats.brutoTotal.toFixed(2)), styleDataNumberBold), c("m²", styleDataNumberBold)]);
+                const sisaKuotaKLB = stats.maxAllowedKLBArea - stats.brutoTotal;
+                wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsData.push([]);
+
+                stats.buildingDetails.forEach(b => {
+                   wsData.push([c(`RINCIAN: ${b.name.toUpperCase()}`, styleSubtitle)]);
+                   wsData.push([]);
+                   wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jumlah", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Keterangan", styleHeader) ]);
+
+                   b.floors.forEach(f => {
+                      const floorHeaderFill = { fgColor: { rgb: "F1F5F9" } };
+                      wsData.push([
+                        c(f.name, { ...styleDataText, font: { bold: true }, fill: floorHeaderFill }),
+                        c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill })
+                      ]);
+                      
+                      let floorRooms = rooms.filter(r => r.floorId === f.id);
+                      if (reportSortBy === 'name') floorRooms = [...floorRooms].sort((a, b) => a.label.localeCompare(b.label));
+                      else if (reportSortBy === 'zone') floorRooms = [...floorRooms].sort((a, b) => { const zA = zones.find(z=>z.id===a.zoneId)?.label||''; const zB = zones.find(z=>z.id===b.zoneId)?.label||''; return zA.localeCompare(zB);});
+
+                      floorRooms.forEach(room => {
+                        const z = zones.find(z => z.id === room.zoneId) || zones[0];
+                        const count = Number(room.count) || 0; const std = Number(room.std) || 0; const netto = count * std;
+                        wsData.push([ c("", styleDataText), c(room.label, styleDataText), c(z.label, styleDataNumber), c(count, styleDataNumber), c(std, styleDataNumber), c(Number(netto.toFixed(2)), styleDataNumberBold), c(room.notes || "-", styleDataText) ]);
+                      });
+
+                      factors.forEach(fac => {
+                        const facValue = Number(f.factorValues?.[fac.id]) || 0; const facArea = (f.netto * facValue) / 100;
+                        if (facValue > 0) {
+                          wsData.push([ 
+                            c("", styleDataText), c("", styleDataText), 
+                            c(`+ ${fac.label}`, { ...styleDataText, font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } }), 
+                            c(`${facValue}%`, { ...styleDataNumber, font: { italic: true } }), 
+                            c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder) 
+                          ]);
+                        }
+                      });
+                      
+                      wsData.push([ c("", styleDataText), c(`Subtotal Netto ${f.name} (tanpa luasan faktor tambahan)`, { ...styleDataText, font: { bold: true } }), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(Number(f.netto.toFixed(2)), styleDataNumberBold), c("", emptyBorder) ]);
+
+                      const floorTotalFill = { fgColor: { rgb: "E0E7FF" } };
+                      wsData.push([ c("", { border: borderAll, fill: floorTotalFill }), c(`TOTAL BRUTO ${f.name}`, { ...styleDataText, font: { bold: true }, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c(Number(f.bruto.toFixed(2)), { ...styleDataNumberBold, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }) ]);
+                      wsData.push([]);
+                   });
+
+                   const buildingTotalFill = { fgColor: { rgb: "1E293B" } };
+                   const styleBuildingTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
+                   const styleBuildingTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
+                   wsData.push([
+                      c("", { border: borderAll, fill: buildingTotalFill }),
+                      c(`TOTAL GFA ${b.name.toUpperCase()}`, styleBuildingTotalText),
+                      c("", { border: borderAll, fill: buildingTotalFill }),
+                      c("", { border: borderAll, fill: buildingTotalFill }),
+                      c("", { border: borderAll, fill: buildingTotalFill }),
+                      c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber),
+                      c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E2E8F0" }, italic: true }, fill: buildingTotalFill, border: borderAll })
+                   ]);
+                   wsData.push([]);
+                });
+
+                const grandTotalFill = { fgColor: { rgb: "0F172A" } };
+                const styleGrandTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
+                const styleGrandTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
+
+                wsData.push([
+                  c("", { border: borderAll, fill: grandTotalFill }),
+                  c("TOTAL GFA", styleGrandTotalText),
+                  c("", { border: borderAll, fill: grandTotalFill }),
+                  c("", { border: borderAll, fill: grandTotalFill }),
+                  c("", { border: borderAll, fill: grandTotalFill }),
+                  c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber),
+                  c("", { border: borderAll, fill: grandTotalFill })
+                ]);
+                wsData.push([]);
+
+                const wb = window.XLSX.utils.book_new(); const ws = window.XLSX.utils.aoa_to_sheet(wsData);
+                ws['!cols'] = [ { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 18 }, { wch: 40 } ];
+                window.XLSX.utils.book_append_sheet(wb, ws, "Program Ruang");
+                window.XLSX.writeFile(wb, `${(projectName || 'Laporan').replace(/\s+/g, '_')}.xlsx`);
+              } catch (error) { console.error("Export failed:", error); showAlert("Terjadi kesalahan saat mengekspor Excel.", "Error"); } 
+              finally { setIsExportingExcel(false); }
+            };
+
+            if (window.XLSX && window.__isXlsxStyleLoaded) {
+              generateXLSX();
+            } else {
+              const script = document.createElement('script');
+              script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
+              script.onload = () => { window.__isXlsxStyleLoaded = true; generateXLSX(); };
+              script.onerror = () => { setIsExportingExcel(false); showAlert("Gagal memuat Excel.", "Error"); };
+              document.body.appendChild(script);
+            }
+          }, [stats, rooms, zones, factors, floors, buildings, projectName, projectLocation, landArea, reportSortBy, kdbLimit, ktbLimit, kdhLimit, klbLimit, showAlert]);
+
+          const ComplianceBadge = ({ isOk, label, current, limit, unit = "", subText = "" }) => (
+            <div className={`p-4 rounded-xl border flex flex-col justify-between transition-all print:border-slate-300 print:bg-transparent ${isOk ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-rose-50 border-rose-100 text-rose-800'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider opacity-70 print:text-black">{label}</span>
+                {isOk && CheckCircle2 ? <CheckCircle2 className="w-4 h-4 print:text-black" /> : AlertTriangle ? <AlertTriangle className="w-4 h-4 print:text-black" /> : null}
+              </div>
+              <div className="flex flex-col">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-black print:text-black">{current.toFixed(2)}</span>
+                  <span className="text-[10px] font-bold opacity-60 print:text-black">/ {limit} {unit}</span>
+                </div>
+                {subText && <div className="text-[9px] font-bold mt-1 opacity-80 uppercase tracking-tighter leading-tight print:text-black">{subText}</div>}
+              </div>
+              <div className="mt-2 text-[10px] font-bold italic print:text-black">{isOk ? 'MEMENUHI ATURAN' : 'MELAMPAUI BATAS'}</div>
+            </div>
+          );
+
+          const activeBuildingFloors = floors.filter(f => f.buildingId === activeBuildingId);
+          const activeBuilding = buildings.find(b => b.id === activeBuildingId);
+
+          return (
+            <div className="min-h-screen flex flex-col">
+              <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadProject} className="hidden" />
+
+              {/* NAVBAR */}
+              <div className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 py-4 md:px-8 shadow-sm print:hidden">
+                <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-indigo-600 p-2 rounded-lg text-white">
+                      {Building2 && <Building2 className="w-6 h-6" />}
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-bold text-slate-800">Schematic Space Planner</h1>
+                      <p className="text-xs text-slate-500 font-medium tracking-tight">Skematik Perhitungan Intensitas Lahan dan Program Ruang</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 border-r border-slate-200 pr-4">
+                      <button onClick={() => fileInputRef.current.click()} title="Buka Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors">
+                        {FolderOpen && <FolderOpen className="w-4 h-4" />} Buka
+                      </button>
+                      <button onClick={handleSaveProject} title="Simpan Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors">
+                        {Save && <Save className="w-4 h-4" />} Simpan
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1 border-r border-slate-200 pr-4">
+                      <button onClick={undo} disabled={!canUndo} className={`p-2 rounded-lg transition-colors ${canUndo ? 'text-slate-700 hover:bg-slate-100 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}>{Undo2 && <Undo2 className="w-5 h-5" />}</button>
+                      <button onClick={redo} disabled={!canRedo} className={`p-2 rounded-lg transition-colors ${canRedo ? 'text-slate-700 hover:bg-slate-100 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}>{Redo2 && <Redo2 className="w-5 h-5" />}</button>
+                    </div>
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button onClick={() => setActiveTab('input')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'input' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Rancangan</button>
+                      <button onClick={() => setActiveTab('report')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'report' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Analisis & Laporan</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <main id="printable-report" className="flex-grow max-w-6xl mx-auto w-full p-4 md:p-8 print:p-0 print:max-w-none">
+                
+                {/* HEADER PROYEK */}
+                <div className={`mb-8 border-b-2 pb-4 pt-2 flex flex-col md:flex-row md:items-start justify-between gap-4 ${activeTab === 'report' ? 'border-slate-900 print:border-black' : 'border-slate-200'}`}>
+                  <div className="flex-1 w-full relative group">
+                    {activeTab === 'input' ? (
+                      <React.Fragment>
+                        <div className="relative">
+                          <input 
+                            type="text" 
+                            value={projectName} 
+                            onChange={(e) => setProjectName(e.target.value)} 
+                            placeholder="NAMA PROYEK MASTERPLAN..." 
+                            className="w-full bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 text-3xl md:text-4xl font-black uppercase text-slate-900 placeholder:text-slate-300 focus:ring-0 p-0 pb-1 outline-none transition-colors" 
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          {MapPin && <MapPin className="w-4 h-4 text-slate-400 shrink-0" />}
+                          <input 
+                            type="text" 
+                            value={projectLocation} 
+                            onChange={(e) => setProjectLocation(e.target.value)} 
+                            placeholder="Lokasi Proyek..." 
+                            className="w-full bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 text-sm font-bold text-slate-500 uppercase tracking-widest placeholder:text-slate-300 focus:ring-0 p-0 pb-1 outline-none transition-colors" 
+                          />
+                        </div>
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-[10px] font-bold text-slate-400 pointer-events-none transition-opacity uppercase tracking-widest bg-white/80 px-2 py-1 rounded print:hidden">
+                          Klik untuk Edit
+                        </div>
+                      </React.Fragment>
+                    ) : (
+                      <React.Fragment>
+                        <div className="relative">
+                          <div className="w-full bg-transparent border-b-2 border-transparent text-3xl md:text-4xl font-black uppercase text-slate-900 p-0 pb-1 print:text-black">
+                            {projectName || 'Laporan Masterplan'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          {MapPin && <MapPin className="w-4 h-4 text-slate-500 shrink-0 print:text-black" />}
+                          <div className="w-full bg-transparent border-b-2 border-transparent text-sm font-bold text-slate-500 uppercase tracking-widest p-0 pb-1 print:text-black">
+                            {projectLocation || 'Lokasi Belum Ditentukan'}
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    )}
+                  </div>
+                  
+                  {activeTab === 'report' && (
+                    <div className="flex items-center gap-3 print:hidden shrink-0" data-html2canvas-ignore="true">
+                      <button onClick={handleExportExcel} disabled={isExportingExcel} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isExportingExcel ? 'bg-emerald-400 text-white cursor-wait' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
+                        {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel (.xlsx)'}
+                      </button>
+                      <button onClick={handlePrintPDF} disabled={isPrinting} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isPrinting ? 'bg-indigo-400 text-white cursor-wait' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                        {Printer && <Printer className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />} {isPrinting ? 'Memproses...' : 'Cetak PDF'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* GLOBAL DASHBOARD */}
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 print:mb-6">
+                  <ComplianceBadge 
+                    label="KDB Kawasan" 
+                    isOk={stats.currentKDB <= (Number(kdbLimit)||0)} 
+                    current={stats.currentKDB} 
+                    limit={kdbLimit} 
+                    unit="%" 
+                    subText={
+                      <React.Fragment>
+                        <div className="mb-0.5">Terdesain: {stats.footprint.toFixed(1)} m²</div>
+                        <div>Maks: {stats.maxAllowedKDBArea.toFixed(1)} m²</div>
+                      </React.Fragment>
+                    } 
+                  />
+                  <ComplianceBadge 
+                    label="KTB Kawasan" 
+                    isOk={stats.currentKTB <= (Number(ktbLimit)||0)} 
+                    current={stats.currentKTB} 
+                    limit={ktbLimit} 
+                    unit="%" 
+                    subText={
+                      <React.Fragment>
+                        <div className="mb-0.5">Terdesain: {stats.basementFootprint.toFixed(1)} m²</div>
+                        <div>Maks: {stats.maxAllowedKTBArea.toFixed(1)} m²</div>
+                      </React.Fragment>
+                    } 
+                  />
+                  <div className="p-4 rounded-xl border flex flex-col justify-between transition-all bg-emerald-50 border-emerald-100 text-emerald-800 print:border-slate-300 print:bg-transparent">
+                    <div className="flex items-center justify-between mb-2"><span className="text-[10px] font-black uppercase tracking-wider opacity-70 print:text-black">KDH (Area Hijau)</span>{Info && <Info className="w-4 h-4 print:text-black" />}</div>
+                    <div className="flex flex-col"><div className="flex items-baseline gap-1"><span className="text-xl font-black print:text-black">{kdhLimit}</span><span className="text-[10px] font-bold opacity-60 print:text-black">% MIN</span></div><div className="text-[9px] font-bold mt-1 opacity-80 uppercase tracking-tighter leading-tight print:text-black">Min: {stats.minRequiredKDHArea.toFixed(1)} m²</div></div>
+                    <div className="mt-2 text-[10px] font-bold italic print:text-black">CEK DESAIN</div>
+                  </div>
+                  <ComplianceBadge 
+                    label="KLB (FAR) Kawasan" 
+                    isOk={stats.currentKLB <= (Number(klbLimit)||0)} 
+                    current={stats.currentKLB} 
+                    limit={klbLimit} 
+                    subText={
+                      <React.Fragment>
+                        <div className="mb-0.5">Terdesain: {stats.brutoTotal.toFixed(1)} m²</div>
+                        <div>Maks: {stats.maxAllowedKLBArea.toFixed(1)} m²</div>
+                      </React.Fragment>
+                    } 
+                  />
+                  
+                  <div className="bg-slate-900 p-4 rounded-xl text-white flex flex-col justify-between shadow-lg col-span-2 print:bg-white print:text-black print:border print:border-slate-300 print:shadow-none">
+                    <div className="flex items-center justify-between opacity-70"><span className="text-[10px] font-black uppercase tracking-wider print:text-black">TOTAL TERDESAIN</span>{FileText && <FileText className="w-4 h-4 print:hidden" />}</div>
+                    <div className="text-2xl font-black mt-1">{stats.brutoTotal.toFixed(1)} <span className="text-xs font-normal">m²</span></div>
+                    <div className={`mt-2 text-[9px] font-bold uppercase tracking-tighter print:text-black flex justify-between items-center gap-2 ${stats.brutoTotal > stats.maxAllowedKLBArea ? 'text-rose-400' : 'text-indigo-300'}`}>
+                      <span className="truncate">Sisa KLB: {(stats.maxAllowedKLBArea - stats.brutoTotal).toFixed(1)} m²</span>
+                      <span className={`px-1.5 py-0.5 rounded border shrink-0 ${stats.brutoTotal > stats.maxAllowedKLBArea ? 'bg-rose-950/50 border-rose-500/20' : 'bg-white/10 border-white/5'}`}>
+                        {stats.maxAllowedKLBArea > 0 ? ((stats.brutoTotal / stats.maxAllowedKLBArea) * 100).toFixed(1) : 0}% Terdesain
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {activeTab === 'input' ? (
+                  <div className="space-y-6">
+                    
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">{LandPlot && <LandPlot className="w-5 h-5 text-indigo-600" />} Parameter Lahan & Acuan Tapak</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Luas Lahan (m²)</label>
+                            <input type="number" value={landArea} onChange={(e) => setLandArea(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-black text-indigo-600" />
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Maks KDB (%)</label>
+                            <input type="number" value={kdbLimit} onChange={(e) => setKdbLimit(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Maks KTB (%)</label>
+                            <input type="number" value={ktbLimit} onChange={(e) => setKtbLimit(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Min KDH (%)</label>
+                            <input type="number" value={kdhLimit} onChange={(e) => setKdhLimit(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-bold text-emerald-700" />
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Maks KLB</label>
+                            <input type="number" step="0.1" value={klbLimit} onChange={(e) => setKlbLimit(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                            <div className="text-[9px] mt-1.5 text-indigo-500 font-bold italic tracking-tighter uppercase">
+                              *Est. Jml Lantai: {Number(kdbLimit) > 0 ? (Number(klbLimit) / (Number(kdbLimit) / 100)).toFixed(1) : 0} lt
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-span-2 md:col-span-3 lg:col-span-5">
+                            <div className="bg-slate-100 p-4 rounded-xl text-[10px] text-slate-500 font-medium">
+                                Parameter ini berlaku untuk <strong className="text-slate-700">keseluruhan luas lahan</strong>. Footprint KDB dan KTB akan dihitung dari gabungan lantai dasar dan basement dari <strong className="text-indigo-600">seluruh gedung</strong> yang ada di dalam masterplan ini.
+                            </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => setShowFactorManager(!showFactorManager)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${showFactorManager ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>{SlidersHorizontal && <SlidersHorizontal className="w-4 h-4" />} Atur Faktor</button>
+                      <button onClick={() => setShowZoneManager(!showZoneManager)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${showZoneManager ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>{Palette && <Palette className="w-4 h-4" />} Atur Zoning</button>
+                    </div>
+
+                    {showFactorManager && (
+                      <div className="bg-white p-6 rounded-2xl border-2 border-indigo-100 shadow-md">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="font-bold text-slate-800 flex items-center gap-2">{SlidersHorizontal && <SlidersHorizontal className="w-5 h-5 text-indigo-600" />} Manajemen Faktor Pengali</h3>
+                          <button onClick={addFactor} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">{PlusCircle && <PlusCircle className="w-3 h-3" />} Tambah Faktor</button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {factors.map(fac => (
+                            <div key={fac.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col gap-3">
+                              <div className="flex items-center justify-between">
+                                <input type="text" value={fac.label} onChange={(e) => updateFactor(fac.id, e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold focus:ring-2 focus:ring-indigo-400 w-full mr-2 text-slate-700" placeholder="Nama Faktor" />
+                                <button onClick={() => removeFactor(fac.id)} className="text-slate-400 hover:text-rose-500 p-1 bg-white rounded-lg border border-slate-200">{X && <X className="w-4 h-4" />}</button>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden w-24 flex-shrink-0">
+                                  <input type="number" step="0.1" value={fac.defaultVal !== undefined ? fac.defaultVal : ''} onChange={(e) => updateFactorDefault(fac.id, e.target.value)} className="w-full px-2 py-1.5 text-sm font-bold text-indigo-600 outline-none text-center" />
+                                  <span className="px-2 py-1.5 text-[10px] font-black text-slate-500 bg-slate-100 border-l border-slate-200">%</span>
+                                </div>
+                                <button onClick={() => applyFactorToAllFloors(fac.id)} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider py-2 rounded-lg transition-colors shadow-sm" title="Terapkan persentase ini ke semua lantai">
+                                  Terapkan Semua
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 text-[10px] font-bold text-slate-500 bg-indigo-50 p-3 rounded-xl border border-indigo-100 flex items-start gap-2">
+                            {Info && <Info className="w-4 h-4 text-indigo-500 flex-shrink-0" />}
+                            <p>Ubah persentase di atas untuk mengatur <strong>nilai default</strong> bagi lantai yang baru ditambahkan. Klik tombol <strong>"Terapkan Semua"</strong> untuk memaksa seluruh lantai yang sudah ada agar mengikuti persentase tersebut.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {showZoneManager && (
+                      <div className="bg-white p-6 rounded-2xl border-2 border-indigo-100 shadow-md">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="font-bold text-slate-800 flex items-center gap-2">{Settings2 && <Settings2 className="w-5 h-5 text-indigo-600" />} Manajemen Zoning</h3>
+                          <button onClick={addZone} className="text-xs font-bold text-indigo-600 hover:underline">+ Tambah Zona</button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {zones.map(z => (
+                            <div key={z.id} className={`p-3 rounded-xl border flex flex-col gap-2 ${getZoneStyle(z.colorId).color.split(' ')[0]}`}>
+                              <div className="flex items-center justify-between">
+                                <input type="text" value={z.label} onChange={(e) => updateZone(z.id, 'label', e.target.value)} className="bg-white/50 border-none rounded px-2 py-0.5 text-xs font-bold w-full mr-2" />
+                                <button onClick={() => removeZone(z.id)}>{X && <X className="w-3 h-3" />}</button>
+                              </div>
+                              <div className="flex gap-1">
+                                {ZONE_COLORS.map(c => (
+                                  <button key={c.id} onClick={() => updateZone(z.id, 'colorId', c.id)} className={`w-5 h-5 rounded-full border-2 ${c.color.split(' ')[0]} ${z.colorId === c.id ? 'border-indigo-600' : 'border-transparent'}`} />
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      
+                      {/* TABS GEDUNG */}
+                      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b-2 border-slate-200">
+                         {buildings.map((b, idx) => (
+                            <div 
+                                key={b.id} 
+                                className={`flex items-center group relative transition-all duration-200 ${draggedBuildingIdx === idx ? 'opacity-40 scale-95' : ''} ${dragOverBuildingIdx === idx && draggedBuildingIdx !== idx ? 'border-l-4 border-l-indigo-500 pl-1' : ''}`}
+                                draggable 
+                                onDragStart={(e) => handleBuildingDragStart(e, idx)} 
+                                onDragOver={(e) => handleBuildingDragOver(e, idx)} 
+                                onDrop={(e) => handleBuildingDrop(e, idx)} 
+                                onDragEnd={handleBuildingDragEnd}
+                            >
+                                <button 
+                                    onClick={() => setActiveBuildingId(b.id)}
+                                    className={`flex items-center gap-2 whitespace-nowrap pl-4 pr-8 py-3 font-black text-sm rounded-t-xl transition-all border-x border-t cursor-pointer ${activeBuildingId === b.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
+                                >
+                                    <span className={`cursor-grab active:cursor-grabbing ${activeBuildingId === b.id ? 'text-indigo-300 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`} title="Tahan dan geser untuk memindahkan gedung">
+                                      {GripVertical && <GripVertical className="w-4 h-4" />}
+                                    </span>
+                                    {b.name}
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); removeBuilding(b.id); }} 
+                                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full transition-colors ${activeBuildingId === b.id ? 'text-white/70 hover:text-white hover:bg-rose-500 opacity-100' : 'opacity-0 hidden'}`}
+                                >
+                                    {X && <X className="w-3 h-3" />}
+                                </button>
+                            </div>
+                         ))}
+                         <button onClick={addBuilding} className="flex items-center gap-2 px-4 py-3 ml-2 text-sm font-bold text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors border border-dashed border-indigo-300">
+                            {Plus && <Plus className="w-4 h-4" />} Gedung Baru
+                         </button>
+                      </div>
+
+                      {/* EDITOR GEDUNG AKTIF */}
+                      {activeBuilding && (
+                          <div className="bg-indigo-50/30 p-6 rounded-b-2xl border border-t-0 border-indigo-100 mb-8 animate-in fade-in">
+                              
+                              <div className="flex justify-between items-center mb-4 px-1">
+                                 <div className="text-xs font-black text-indigo-900 uppercase tracking-widest flex items-center gap-2">
+                                     {Building && <Building className="w-4 h-4" />} Pengaturan Gedung
+                                 </div>
+                                 <button 
+                                     onClick={() => setDuplicateBuildingModal({ isOpen: true, buildingId: activeBuilding.id, count: 1 })} 
+                                     className="text-xs font-bold flex items-center gap-1.5 text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+                                 >
+                                     {Copy && <Copy className="w-3 h-3" />} Duplikasi Gedung
+                                 </button>
+                              </div>
+
+                              <div className="flex flex-col md:flex-row gap-6 items-start mb-8 bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
+                                  <div className="flex-1 w-full">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nama Gedung</label>
+                                      <input 
+                                        type="text" 
+                                        value={activeBuilding.name} 
+                                        onChange={(e) => updateBuilding(activeBuilding.id, 'name', e.target.value)} 
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 font-black text-slate-800 text-lg focus:ring-2 focus:ring-indigo-400 outline-none" 
+                                      />
+                                  </div>
+                                  <div className="flex-1 w-full">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Lantai Acuan Footprint (KDB)</label>
+                                      <select 
+                                        value={activeBuilding.kdbFloorId} 
+                                        onChange={(e) => updateBuilding(activeBuilding.id, 'kdbFloorId', e.target.value)} 
+                                        className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-400 outline-none"
+                                      >
+                                        <option value="">-- Tidak Dihitung --</option>
+                                        {activeBuildingFloors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                      </select>
+                                      <p className="text-[9px] text-slate-500 mt-1 pl-1">Menyumbang {stats.buildingDetails.find(b=>b.id === activeBuilding.id)?.footprint.toFixed(1)} m² ke KDB Kawasan.</p>
+                                  </div>
+                                  <div className="flex-1 w-full">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Lantai Acuan Basement (KTB)</label>
+                                      <select 
+                                        value={activeBuilding.ktbFloorId} 
+                                        onChange={(e) => updateBuilding(activeBuilding.id, 'ktbFloorId', e.target.value)} 
+                                        className="w-full bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                                      >
+                                        <option value="">-- Tidak Punya Basement --</option>
+                                        {activeBuildingFloors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                      </select>
+                                      <p className="text-[9px] text-slate-500 mt-1 pl-1">Menyumbang {stats.buildingDetails.find(b=>b.id === activeBuilding.id)?.basementFootprint.toFixed(1)} m² ke KTB Kawasan.</p>
+                                  </div>
+                              </div>
+
+                              <datalist id="reference-options">
+                                {referenceSuggestions.map((ref, idx) => <option key={idx} value={ref} />)}
+                              </datalist>
+                              <datalist id="room-name-options">
+                                {roomNameSuggestions.map((name, idx) => <option key={idx} value={name} />)}
+                              </datalist>
+
+                              {activeBuildingFloors.length >= 2 && (
+                                <button onClick={() => addFloor('top')} className={`w-full flex items-center justify-center gap-2 py-3 mb-4 text-sm font-bold border-2 border-dashed rounded-2xl transition-all bg-white border-indigo-200 text-indigo-500 hover:bg-indigo-50 hover:border-indigo-400 shadow-sm`}>
+                                  {Plus && <Plus className="w-5 h-5" />} Tambah Lantai Baru di {activeBuilding.name} (Alt + L)
+                                </button>
+                              )}
+
+                              <div className="space-y-6">
+                                  {activeBuildingFloors.map((f, fIdx) => (
+                                    <div key={f.id} draggable onDragStart={(e) => handleDragStart(e, fIdx)} onDragOver={(e) => handleDragOver(e, fIdx)} onDrop={(e) => handleDrop(e, fIdx)} onDragEnd={handleDragEnd} className={`bg-white rounded-2xl border ${draggedFloorIdx === fIdx ? 'opacity-40 border-indigo-400 border-dashed scale-[0.98]' : 'border-slate-200'} ${dragOverFloorIdx === fIdx && draggedFloorIdx !== fIdx ? 'border-t-4 border-t-indigo-500 shadow-lg' : ''} shadow-sm overflow-hidden transition-all duration-200 relative`} onFocus={() => setLastActiveFloorId(f.id)} onClick={() => setLastActiveFloorId(f.id)}>
+                                      
+                                      {(activeBuilding.kdbFloorId === f.id || activeBuilding.ktbFloorId === f.id) && (
+                                        <div className="absolute top-0 right-0 left-0 h-1.5 flex">
+                                          {activeBuilding.kdbFloorId === f.id && <div className="h-full flex-1 bg-emerald-400" title="Lantai Acuan KDB Gedung Ini"></div>}
+                                          {activeBuilding.ktbFloorId === f.id && <div className="h-full flex-1 bg-amber-400" title="Lantai Acuan KTB Gedung Ini"></div>}
+                                        </div>
+                                      )}
+                                      
+                                      <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 mt-1">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                          <div className="flex items-center gap-3">
+                                            <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-indigo-600 transition-colors" title="Tahan dan geser untuk memindahkan lantai">
+                                              {GripVertical && <GripVertical className="w-5 h-5" />}
+                                            </div>
+                                            <button onClick={() => toggleFloorCollapse(f.id)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded transition-colors" title={collapsedFloors[f.id] ? "Tampilkan Ruangan" : "Sembunyikan Ruangan"}>
+                                              {collapsedFloors[f.id] ? (ChevronRight && <ChevronRight className="w-5 h-5" />) : (ChevronDown && <ChevronDown className="w-5 h-5" />)}
+                                            </button>
+                                            <span className="bg-slate-800 text-white text-[10px] font-black px-2 py-1 rounded">F{fIdx+1}</span>
+                                            <input type="text" value={f.name} onChange={(e) => updateFloorConfig(f.id, 'name', e.target.value)} className="bg-transparent border-none font-black text-slate-700 focus:ring-0 p-0 text-lg w-40" />
+                                            <div className="flex gap-1 ml-1 items-center">
+                                              {activeBuilding.kdbFloorId === f.id && <span className="bg-emerald-100 text-emerald-700 text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-widest border border-emerald-200">KDB</span>}
+                                              {activeBuilding.ktbFloorId === f.id && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-widest border border-amber-200">KTB</span>}
+                                              <div className="flex items-center gap-2 border-l border-slate-200 pl-3 ml-1">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase">Tinggi (m)</label>
+                                                <input type="number" step="0.1" value={f.floorHeight !== undefined ? f.floorHeight : ''} onChange={(e) => updateFloorConfig(f.id, 'floorHeight', e.target.value)} className="w-14 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded p-1 text-center focus:ring-2 focus:ring-indigo-400" />
+                                              </div>
+                                            </div>
+                                          </div>
+                                          
+                                          {!collapsedFloors[f.id] ? (
+                                            <div className="flex flex-wrap gap-4 bg-white p-2 rounded-xl border border-slate-200">
+                                              {factors.map((fac, idx) => (
+                                                <div key={fac.id} className={`flex items-center gap-2 ${idx !== 0 ? 'border-l border-slate-100 pl-4' : ''}`}>
+                                                  <label className="text-[9px] font-black text-slate-400 uppercase">{fac.label} (%)</label>
+                                                  <input type="number" value={f.factorValues?.[fac.id] !== undefined ? f.factorValues[fac.id] : ''} onChange={(e) => updateFloorFactor(f.id, fac.id, e.target.value)} className="w-12 text-xs font-bold text-indigo-600 bg-indigo-50 border-none rounded p-1 text-center" />
+                                                </div>
+                                              ))}
+                                              <div className="flex items-center gap-1 border-l border-slate-100 pl-4 text-[10px] font-black text-slate-400 uppercase">
+                                                <span>Sub:</span>
+                                                <span className="text-slate-800">+{stats.floorDetails.find(fd => fd.id === f.id)?.totalMultiplier ?? 0}%</span>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-3 bg-indigo-50/80 px-4 py-2 rounded-xl border border-indigo-100">
+                                              <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Luas Bruto</span>
+                                              <span className="text-sm font-black text-indigo-700">{stats.floorDetails.find(fd => fd.id === f.id)?.bruto.toFixed(1)} m²</span>
+                                            </div>
+                                          )}
+
+                                          <div className="flex items-center gap-2">
+                                            <button onClick={() => setDuplicateModal({ isOpen: true, floorId: f.id, count: 1 })} className="text-slate-400 hover:text-indigo-600 p-2" title="Duplikasi Lantai Ini">{Copy && <Copy className="w-4 h-4" />}</button>
+                                            <button onClick={() => removeFloor(f.id)} className="text-slate-300 hover:text-rose-500 p-2" title="Hapus Lantai">{Trash2 && <Trash2 className="w-4 h-4" />}</button>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {!collapsedFloors[f.id] && (
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-sm">
+                                            <thead className="text-[10px] font-black text-slate-400 uppercase bg-slate-50/30 border-b border-slate-100">
+                                              <tr>
+                                                <th className="py-3 px-4 text-left w-24 cursor-pointer hover:text-indigo-600 group select-none" onClick={() => sortRoomsInFloor(f.id, 'zone')}>
+                                                  <div className="flex items-center gap-1">Zoning {ArrowUpDown && <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-100" />}</div>
+                                                </th>
+                                                <th className="py-3 px-2 text-left min-w-[140px] cursor-pointer hover:text-indigo-600 group select-none" onClick={() => sortRoomsInFloor(f.id, 'name')}>
+                                                  <div className="flex items-center gap-1">Nama Ruangan {ArrowUpDown && <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-100" />}</div>
+                                                </th>
+                                                <th className="py-3 px-2 text-center w-16">Jml</th>
+                                                <th className="py-3 px-2 text-center w-20">m²/Unit</th>
+                                                <th className="py-3 px-4 text-center w-20">Luas (m²)</th>
+                                                <th className="py-3 px-2 text-left min-w-[140px]">Referensi / Ket.</th>
+                                                <th className="py-3 px-2 w-10"></th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                              {rooms.filter(r => r.floorId === f.id).map((room) => {
+                                                const z = zones.find(z => z.id === room.zoneId) || zones[0];
+                                                return (
+                                                  <tr key={room.id} className="group hover:bg-slate-50/30">
+                                                    <td className="py-3 px-4"><select value={room.zoneId} onChange={(e) => updateRoom(room.id, 'zoneId', e.target.value)} className={`text-[9px] font-black rounded-full px-2 py-1 border-none cursor-pointer w-full ${getZoneStyle(z.colorId).color}`}>{zones.map(z => (<option key={z.id} value={z.id}>{z.label}</option>))}</select></td>
+                                                    <td className="py-3 px-2"><input type="text" list="room-name-options" value={room.label} onChange={(e) => updateRoom(room.id, 'label', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-transparent border-none font-medium focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
+                                                    <td className="py-3 px-2"><input type="number" value={room.count} onChange={(e) => updateRoom(room.id, 'count', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
+                                                    <td className="py-3 px-2"><input type="number" step="0.1" value={room.std} onChange={(e) => updateRoom(room.id, 'std', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
+                                                    <td className="py-3 px-4 text-center font-bold text-slate-700">{((Number(room.count) || 0) * (Number(room.std) || 0)).toFixed(1)}</td>
+                                                    <td className="py-3 px-2"><input type="text" list="reference-options" value={room.notes || ''} onChange={(e) => updateRoom(room.id, 'notes', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} placeholder="Ref. standar..." className="w-full bg-transparent border-none font-medium text-slate-500 text-[11px] italic focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
+                                                    <td className="py-3 px-2 text-center"><button onClick={() => removeRoom(room.id)} className="text-slate-200 hover:text-rose-500 opacity-0 group-hover:opacity-100">{X && <X className="w-4 h-4" />}</button></td>
+                                                  </tr>
+                                                );
+                                              })}
+                                              <tr>
+                                                <td colSpan={7} className="py-3 px-6">
+                                                  <button onClick={() => addRoom(f.id)} className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100/80 border border-dashed border-indigo-300 rounded-xl transition-all">
+                                                    {PlusCircle && <PlusCircle className="w-4 h-4" />} Tambah Ruang Baru (Enter)
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            </tbody>
+                                            <tfoot>
+                                              <tr className="bg-slate-50/50 text-[11px] font-black">
+                                                <td colSpan={4} className="py-3 px-6 text-right text-slate-400 uppercase">Estimasi Bruto {f.name} (+{stats.floorDetails.find(fd => fd.id === f.id)?.totalMultiplier ?? 0}%)</td>
+                                                <td className="py-3 px-4 text-center text-indigo-600">{stats.floorDetails.find(fd => fd.id === f.id)?.bruto.toFixed(1)} m²</td>
+                                                <td colSpan={2}></td>
+                                              </tr>
+                                            </tfoot>
+                                          </table>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                              </div>
+                              
+                              <button onClick={() => addFloor('bottom')} className={`w-full flex items-center justify-center gap-2 py-4 mt-4 text-sm font-bold border-2 border-dashed rounded-2xl transition-all bg-white border-indigo-300 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-400 shadow-sm`}>
+                                {Plus && <Plus className="w-5 h-5" />} Tambah Lantai Baru di {activeBuilding.name} (Alt + L)
+                              </button>
+                          </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      
+                      {/* Analisis GFA Kawasan */}
+                      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-slate-300">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">{PieChart && <PieChart className="w-5 h-5 text-indigo-600 print:text-black" />} Distribusi GFA</h3>
+                        <div className="space-y-6 max-h-80 overflow-y-auto pr-2">
+                          {stats.buildingDetails.map(b => {
+                            const percentage = stats.brutoTotal > 0 ? (b.bruto / stats.brutoTotal) * 100 : 0;
+                            return (
+                              <div key={b.id}>
+                                <div className="flex justify-between items-end border-b border-slate-100 pb-1 mb-3 print:border-slate-300">
+                                  <span className="text-[10px] font-black uppercase text-slate-700 print:text-black">
+                                    {b.name} <span className="text-slate-400 font-bold ml-1">({percentage.toFixed(1)}%)</span>
+                                  </span>
+                                  <span className="text-[10px] font-bold text-indigo-600">{b.bruto.toFixed(1)} m²</span>
+                                </div>
+                                
+                                <div className="space-y-3">
+                                  {b.floors.map(f => {
+                                    const floorPercentage = b.bruto > 0 ? (f.bruto / b.bruto) * 100 : 0;
+                                    return (
+                                      <div key={f.id}>
+                                        <div className="flex justify-between text-[9px] mb-1 font-bold uppercase text-slate-500 print:text-slate-700">
+                                          <span>{f.name} <span className="opacity-60 ml-1">({floorPercentage.toFixed(1)}%)</span></span>
+                                          <span>{f.bruto.toFixed(1)} m²</span>
+                                        </div>
+                                        <div className="w-full bg-slate-50 h-1.5 rounded-full overflow-hidden print:border print:border-slate-200">
+                                          <div className="bg-indigo-400 h-full print:bg-slate-500" style={{ width: `${floorPercentage}%` }}></div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Komposisi Zona */}
+                      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-slate-300">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">{MapIcon && <MapIcon className="w-5 h-5 text-indigo-600 print:text-black" />} Komposisi Zona</h3>
+                        <div className="space-y-6 max-h-80 overflow-y-auto pr-2">
+                          {stats.buildingDetails.map(b => (
+                            <div key={b.id}>
+                              <div className="flex justify-between items-end border-b border-slate-100 pb-1 mb-3 print:border-slate-300">
+                                <span className="text-[10px] font-black uppercase text-slate-700 print:text-black">{b.name}</span>
+                                <span className="text-[10px] font-bold text-emerald-600">{b.netto.toFixed(1)} m²</span>
+                              </div>
+                              
+                              <div className="space-y-3">
+                                {b.zoneBreakdown.map(z => {
+                                  if (z.area === 0) return null; 
+                                  const percentage = b.netto > 0 ? (z.area / b.netto) * 100 : 0;
+                                  return (
+                                    <div key={z.id}>
+                                      <div className="flex justify-between text-[9px] mb-1 font-bold uppercase text-slate-600 print:text-black">
+                                        <span>{z.name} <span className="opacity-60 ml-1">({percentage.toFixed(1)}%)</span></span>
+                                        <span>{z.area.toFixed(1)} m²</span>
+                                      </div>
+                                      <div className="w-full bg-slate-50 h-1.5 rounded-full overflow-hidden print:border print:border-slate-200">
+                                        <div className={`${z.style.color.split(' ')[0].replace('100', '500')} h-full print:bg-slate-600`} style={{ width: `${percentage}%` }}></div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Elevasi per Gedung */}
+                      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-slate-300">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">{Layers && <Layers className="w-5 h-5 text-indigo-600 print:text-black" />} Profil Elevasi Gedung</h3>
+                        <div className="flex flex-col gap-4 overflow-y-auto max-h-64 pr-2">
+                            {stats.buildingDetails.map(b => (
+                                <div key={b.id} className="border-b border-slate-100 pb-3 last:border-0 print:border-slate-300">
+                                    <div className="text-[10px] font-black uppercase text-slate-800 mb-2 print:text-black">{b.name}</div>
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-indigo-600 font-bold">↑ Atas: +{b.heightAbove.toFixed(2)}m</span>
+                                        <span className="text-amber-600 font-bold">↓ Bawah: -{b.depthBelow.toFixed(2)}m</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* TABEL REPORT PER GEDUNG */}
+                    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden print:shadow-none print:border-none">
+                      <div className="p-8 border-b-8 border-indigo-900 bg-slate-50 flex justify-between items-center print:border-b-2 print:border-black print:bg-white print:p-0 print:mb-4">
+                        <div><h2 className="text-xl font-black text-slate-900 uppercase">Rincian Luasan Bangunan</h2></div>
+                        <div className="flex items-center gap-3 print:hidden" data-html2canvas-ignore="true">
+                          <div className="flex items-center bg-slate-100 rounded-xl px-3 py-1.5 border border-slate-200">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mr-2 hidden sm:inline">Urutkan:</span>
+                            <select value={reportSortBy} onChange={(e) => setReportSortBy(e.target.value)} className="bg-transparent text-xs font-bold text-slate-700 border-none outline-none focus:ring-0 p-0 cursor-pointer">
+                              <option value="default">Default</option>
+                              <option value="name">Nama Ruang</option>
+                              <option value="zone">Zona</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-8 print:p-0 space-y-12">
+                        {stats.buildingDetails.map(b => (
+                            <div key={b.id} className="break-inside-avoid">
+                                <div className="bg-indigo-600 text-white p-3 rounded-t-xl flex justify-between items-center print:bg-slate-300 print:text-black print:border print:border-black">
+                                    <h3 className="font-black uppercase tracking-wider">{b.name}</h3>
+                                </div>
+                                <table className="w-full border-collapse text-xs border border-t-0 border-slate-200 print:border-black">
+                                <thead>
+                                    <tr className="bg-slate-100 text-slate-600 font-black uppercase tracking-tighter print:bg-slate-200 print:text-black">
+                                    <th className="py-2 px-4 text-left border print:border-black w-24">Lantai</th>
+                                    <th className="py-2 px-4 text-left border print:border-black">Nama Ruangan</th>
+                                    <th className="py-2 px-4 text-center border print:border-black">Zona</th>
+                                    <th className="py-2 px-4 text-center border print:border-black">Jml</th>
+                                    <th className="py-2 px-4 text-center border print:border-black">Luas (m²)</th>
+                                    <th className="py-2 px-4 text-left border print:border-black">Keterangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {b.floors.map((f) => (
+                                    <React.Fragment key={f.id}>
+                                        {(() => {
+                                        let displayRooms = rooms.filter(r => r.floorId === f.id);
+                                        if (reportSortBy === 'name') displayRooms = [...displayRooms].sort((a, b) => a.label.localeCompare(b.label));
+                                        else if (reportSortBy === 'zone') displayRooms = [...displayRooms].sort((a, b) => { const zA = zones.find(z=>z.id===a.zoneId)?.label||''; const zB = zones.find(z=>z.id===b.zoneId)?.label||''; return zA.localeCompare(zB); });
+                                        
+                                        if (displayRooms.length === 0) {
+                                            return (
+                                                <tr className="border-b border-slate-100 print:border-slate-300">
+                                                    <td className="py-2 px-4 font-black text-slate-700 bg-slate-50 border-x border-slate-100 print:border-slate-300 align-top w-24">{f.name}</td>
+                                                    <td colSpan={5} className="py-2 px-4 text-center text-slate-400 italic border-x border-slate-100 print:border-slate-300">Belum ada ruangan</td>
+                                                </tr>
+                                            );
+                                        }
+
+                                        return displayRooms.map((room, idx) => {
+                                            const z = zones.find(z => z.id === room.zoneId) || zones[0];
+                                            return (
+                                            <tr key={room.id} className="border-b border-slate-100 print:border-slate-300">
+                                                {idx === 0 && (
+                                                    <td rowSpan={displayRooms.length} className="py-2 px-4 font-black text-slate-700 bg-slate-50 border-x border-slate-100 print:border-slate-300 align-top w-24">
+                                                        {f.name}
+                                                    </td>
+                                                )}
+                                                <td className="py-2 px-4 font-medium border-x border-slate-100 print:border-slate-300">{room.label}</td>
+                                                <td className="py-2 px-4 text-center border-x border-slate-100 print:border-slate-300"><span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase print:border print:border-slate-400 print:bg-transparent print:text-black ${getZoneStyle(z.colorId).color}`}>{z.label}</span></td>
+                                                <td className="py-2 px-4 text-center border-x border-slate-100 print:border-slate-300">{room.count}</td>
+                                                <td className="py-2 px-4 text-center font-bold border-x border-slate-100 print:border-slate-300">{((Number(room.count) || 0) * (Number(room.std) || 0)).toFixed(1)}</td>
+                                                <td className="py-2 px-4 text-left text-[10px] text-slate-500 italic max-w-[120px] truncate border-x border-slate-100 print:border-slate-300">{room.notes || '-'}</td>
+                                            </tr>
+                                            );
+                                        });
+                                        })()}
+                                        {factors.map(fac => {
+                                        const rawValue = f.factorValues?.[fac.id] !== undefined ? f.factorValues[fac.id] : '';
+                                        const facValue = Number(rawValue) || 0; const facArea = (f.netto * facValue) / 100;
+                                        return (
+                                            <tr key={`${f.id}-${fac.id}`} className="text-[10px] bg-white text-slate-500 border border-slate-50 print:border-slate-300 print:text-black">
+                                            <td className="border-r border-slate-50 print:border-slate-300"></td>
+                                            <td className="border-r border-slate-50 print:border-slate-300"></td>
+                                            <td className="py-1 px-4 text-center italic border-r border-slate-50 print:border-slate-300">+ {fac.label}</td>
+                                            <td className="py-1 px-4 text-center italic border-r border-slate-50 print:border-slate-300">{facValue}%</td>
+                                            <td className="py-1 px-4 text-center font-medium border-r border-slate-50 print:border-slate-300">{facArea.toFixed(1)} m²</td>
+                                            <td></td>
+                                            </tr>
+                                        );
+                                        })}
+                                        <tr className="text-[10px] bg-slate-50 text-slate-600 font-bold border border-slate-200 print:border-black print:bg-white print:text-black">
+                                        <td colSpan={4} className="py-2 px-4 text-right uppercase border-r border-slate-200 print:border-black">Subtotal Netto {f.name} <span className="normal-case italic opacity-75">(tanpa luasan faktor tambahan)</span></td>
+                                        <td className="py-2 px-4 text-center font-black border-r border-slate-200 print:border-black">{f.netto.toFixed(1)} m²</td>
+                                        <td></td>
+                                        </tr>
+                                        <tr className="text-[10px] bg-indigo-50 text-indigo-900 font-black border border-indigo-100 print:bg-slate-100 print:border-black print:text-black">
+                                        <td colSpan={4} className="py-2.5 px-4 text-right uppercase border-r border-indigo-100 print:border-black">Total Luas Bruto {f.name}</td>
+                                        <td className="py-2.5 px-4 text-center border-r border-indigo-100 print:border-black">{f.bruto.toFixed(1)} m²</td>
+                                        <td></td>
+                                        </tr>
+                                    </React.Fragment>
+                                    ))}
+                                    <tr className="text-[11px] bg-slate-800 text-white font-black border border-slate-800 print:bg-slate-200 print:border-black print:text-black">
+                                        <td colSpan={4} className="py-3 px-4 text-right uppercase border-r border-slate-700 print:border-black">TOTAL GFA {b.name}</td>
+                                        <td className="py-3 px-4 text-center text-sm border-r border-slate-700 print:border-black">{b.bruto.toFixed(1)} m²</td>
+                                        <td className="py-3 px-4 text-left opacity-80">Footprint: {b.footprint.toFixed(1)} m²</td>
+                                    </tr>
+                                </tbody>
+                                </table>
+                            </div>
+                        ))}
+
+                        {/* REKAPITULASI AKHIR MASTERPLAN */}
+                        <div className="grid grid-cols-2 gap-4 mt-8 print:break-inside-avoid border-t-4 border-slate-900 pt-8">
+                          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 print:bg-white print:border-black">
+                            <p className="text-[10px] font-black text-slate-400 uppercase mb-3 print:text-black">Perhitungan Intensitas Lahan</p>
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between border-b border-slate-100 pb-1 print:border-slate-300"><span>Luas Lahan</span> <span className="font-bold">{landArea} m²</span></div>
+                              <div className="flex justify-between border-b border-slate-100 pb-1 print:border-slate-300"><span>KDB Gabungan (Maks. {kdbLimit}%)</span> <span className={`font-black ${stats.currentKDB > (Number(kdbLimit)||0) ? 'text-rose-600 print:text-black' : ''}`}>{stats.currentKDB.toFixed(1)}%</span></div>
+                              <div className="flex justify-between border-b border-slate-100 pb-1 print:border-slate-300"><span>KTB Gabungan (Maks. {ktbLimit}%)</span> <span className={`font-black ${stats.currentKTB > (Number(ktbLimit)||0) ? 'text-rose-600 print:text-black' : ''}`}>{stats.currentKTB.toFixed(1)}%</span></div>
+                              <div className="flex justify-between border-b border-slate-100 pb-1 print:border-slate-300"><span>KDH (Min. {kdhLimit}%)</span> <span className="font-bold text-emerald-600 print:text-black">≥ {stats.minRequiredKDHArea.toFixed(1)} m²</span></div>
+                              <div className="flex justify-between border-b border-slate-100 pb-1 print:border-slate-300"><span>KLB Kawasan (Maks. {klbLimit})</span> <span className={`font-black ${stats.currentKLB > (Number(klbLimit)||0) ? 'text-rose-600 print:text-black' : ''}`}>{stats.currentKLB.toFixed(2)}</span></div>
+                            </div>
+                          </div>
+                          <div className="p-4 bg-slate-900 rounded-xl text-white print:bg-white print:text-black print:border print:border-black">
+                            <p className="text-[10px] font-black text-indigo-300 uppercase mb-3 print:text-black">Total Luas Bangunan</p>
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Luas Netto</span> <span className="font-black text-white print:text-black">{stats.nettoTotal.toFixed(1)} m²</span></div>
+                              <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Add. Factors</span> <span className="font-black text-white print:text-black">{Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(1)} m²</span></div>
+                              <div className="flex justify-between text-lg font-black pt-2 mt-2 print:border-black"><span>TOTAL GFA</span> <span>{stats.brutoTotal.toFixed(1)} m²</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </main>
+
+              {duplicateModal.isOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+                  <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full p-6">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">{Copy && <Copy className="w-4 h-4 text-indigo-500" />} Duplikasi</h3>
+                      <button onClick={() => setDuplicateModal({ isOpen: false, floorId: null, count: 1 })} className="text-slate-400 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 p-1.5 rounded-full transition-colors">{X && <X className="w-4 h-4" />}</button>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-5 font-medium leading-relaxed">Tentukan berapa banyak salinan lantai ini yang ingin Anda buat secara instan.</p>
+                    <div className="mb-6">
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Jumlah Salinan Baru</label>
+                      <input type="number" min="1" max={100} value={duplicateModal.count} onChange={(e) => setDuplicateModal(prev => ({ ...prev, count: parseInt(e.target.value) || 1 }))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xl text-center font-black text-indigo-600 focus:ring-2 focus:ring-indigo-400 outline-none" autoFocus />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setDuplicateModal({ isOpen: false, floorId: null, count: 1 })} className="flex-1 py-3 rounded-xl text-xs font-black bg-slate-100 text-slate-600 hover:bg-slate-200 uppercase tracking-widest">Batal</button>
+                      <button onClick={confirmDuplicate} className="flex-1 py-3 rounded-xl text-xs font-black bg-indigo-600 text-white hover:bg-indigo-700 uppercase tracking-widest shadow-lg shadow-indigo-200">Gandakan</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL DUPLIKASI GEDUNG */}
+              {duplicateBuildingModal.isOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+                  <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                        {Copy && <Copy className="w-4 h-4 text-indigo-500" />} Duplikasi Gedung
+                      </h3>
+                      <button onClick={() => setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 })} className="text-slate-400 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 p-1.5 rounded-full transition-colors">{X && <X className="w-4 h-4" />}</button>
+                    </div>
+                    
+                    <p className="text-xs text-slate-500 mb-5 font-medium leading-relaxed">
+                      Buat salinan identik dari gedung ini beserta seluruh lantai dan ruangannya.
+                    </p>
+                    
+                    <div className="mb-6">
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Jumlah Salinan Gedung</label>
+                      <input 
+                        type="number" 
+                        min="1" max={20}
+                        value={duplicateBuildingModal.count}
+                        onChange={(e) => setDuplicateBuildingModal(prev => ({ ...prev, count: parseInt(e.target.value) || 1 }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xl text-center font-black text-indigo-600 focus:ring-2 focus:ring-indigo-400 outline-none transition-shadow"
+                        autoFocus
+                      />
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <button onClick={() => setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 })} className="flex-1 py-3 rounded-xl text-xs font-black bg-slate-100 text-slate-600 hover:bg-slate-200 uppercase tracking-widest">Batal</button>
+                      <button onClick={confirmDuplicateBuilding} className="flex-1 py-3 rounded-xl text-xs font-black bg-indigo-600 text-white hover:bg-indigo-700 uppercase tracking-widest shadow-lg shadow-indigo-200">Gandakan</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL DIALOG UMUM */}
+              {dialog.isOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+                  <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                        {dialog.type === 'alert' ? (AlertTriangle && <AlertTriangle className="w-4 h-4 text-amber-500" />) : (Info && <Info className="w-4 h-4 text-indigo-500" />)}
+                        {dialog.title}
+                      </h3>
+                      <button onClick={() => setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null })} className="text-slate-400 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 p-1.5 rounded-full transition-colors">{X && <X className="w-4 h-4" />}</button>
+                    </div>
+                    <p className="text-xs text-slate-600 mb-6 font-medium leading-relaxed">{dialog.message}</p>
+                    <div className="flex gap-2">
+                      {dialog.type === 'confirm' && (
+                          <button onClick={() => setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null })} className="flex-1 py-3 rounded-xl text-xs font-black bg-slate-100 text-slate-600 hover:bg-slate-200 uppercase tracking-widest">Batal</button>
+                      )}
+                      <button
+                          onClick={() => {
+                              if (dialog.onConfirm) dialog.onConfirm();
+                              setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+                          }}
+                          className={`flex-1 py-3 rounded-xl text-xs font-black text-white uppercase tracking-widest shadow-lg ${dialog.type === 'confirm' ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
+                      >
+                          {dialog.type === 'confirm' ? 'Lanjutkan' : 'Mengerti'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        // Render aplikasi di dalam Error Boundary
+        const root = window.ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
+        );
+    </script>
+</body>
+</html>
