@@ -1533,7 +1533,17 @@
 
                               <div className="space-y-6">
                                   {activeBuildingFloors.map((f, fIdx) => (
-                                    <div key={f.id} draggable onDragStart={(e) => handleDragStart(e, fIdx)} onDragOver={(e) => handleDragOver(e, fIdx)} onDrop={(e) => handleDrop(e, fIdx)} onDragEnd={handleDragEnd} className={`bg-white rounded-2xl border ${draggedFloorIdx === fIdx ? 'opacity-40 border-indigo-400 border-dashed scale-[0.98]' : 'border-slate-200'} ${dragOverFloorIdx === fIdx && draggedFloorIdx !== fIdx ? 'border-t-4 border-t-indigo-500 shadow-lg' : ''} shadow-sm overflow-hidden transition-all duration-200 relative`} onFocus={() => setLastActiveFloorId(f.id)} onClick={() => setLastActiveFloorId(f.id)}>
+                                    <div 
+                                        key={f.id} 
+                                        draggable={!!collapsedFloors[f.id]} 
+                                        onDragStart={(e) => handleDragStart(e, fIdx)} 
+                                        onDragOver={(e) => handleDragOver(e, fIdx)} 
+                                        onDrop={(e) => handleDrop(e, fIdx)} 
+                                        onDragEnd={handleDragEnd} 
+                                        className={`bg-white rounded-2xl border ${draggedFloorIdx === fIdx ? 'opacity-40 border-indigo-400 border-dashed scale-[0.98]' : 'border-slate-200'} ${dragOverFloorIdx === fIdx && draggedFloorIdx !== fIdx ? 'border-t-4 border-t-indigo-500 shadow-lg' : ''} shadow-sm overflow-hidden transition-all duration-200 relative`} 
+                                        onFocus={() => setLastActiveFloorId(f.id)} 
+                                        onClick={() => setLastActiveFloorId(f.id)}
+                                    >
                                       
                                       {(activeBuilding.kdbFloorId === f.id || activeBuilding.ktbFloorId === f.id) && (
                                         <div className="absolute top-0 right-0 left-0 h-1.5 flex">
@@ -1545,7 +1555,7 @@
                                       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 mt-1">
                                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                           <div className="flex items-center gap-3">
-                                            <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-indigo-600 transition-colors" title="Tahan dan geser untuk memindahkan lantai">
+                                            <div className={`${collapsedFloors[f.id] ? 'cursor-grab active:cursor-grabbing text-slate-500 hover:text-indigo-600' : 'cursor-not-allowed text-slate-300'} transition-colors`} title={collapsedFloors[f.id] ? "Tahan dan geser untuk memindahkan lantai" : "Sembunyikan (tutup) ruangan di lantai ini terlebih dahulu untuk memindahkannya"}>
                                               {GripVertical && <GripVertical className="w-5 h-5" />}
                                             </div>
                                             <button onClick={() => toggleFloorCollapse(f.id)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded transition-colors" title={collapsedFloors[f.id] ? "Tampilkan Ruangan" : "Sembunyikan Ruangan"}>
