@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Schematic Space Planner</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -13,20 +12,16 @@
         }
     </script>
     
-    <!-- React & ReactDOM (Menggunakan versi stabil cdnjs) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
     
-    <!-- Fix untuk lucide-react UMD -->
     <script>
         window.react = window.React;
         globalThis.react = window.React;
     </script>
     
-    <!-- Babel Standalone dengan preset react eksplisit -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" crossorigin></script>
     
-    <!-- Lucide Icons React -->
     <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.344.0/dist/umd/lucide-react.min.js" crossorigin></script>
 
     <style>
@@ -49,12 +44,10 @@
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans pb-20 print:bg-white print:pb-0">
     
-    <!-- Root Element React -->
     <div id="root">
         <div id="fallback-loading">Memuat Aplikasi... (Jika macet, periksa koneksi internet)</div>
     </div>
 
-    <!-- Perhatikan penambahan data-presets="react" -->
     <script type="text/babel" data-presets="react">
         // 1. Ekstrak Hooks dari React
         const { useState, useMemo, useEffect, useCallback, useRef } = window.React;
@@ -67,7 +60,7 @@
             PieChart, Palette, Settings2, AlertTriangle, CheckCircle2, LandPlot,
             Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
             MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
-            Building
+            Building, FilePlus
         } = lucide;
         // Penanganan duplikasi alias di Lucide
         const MapIcon = lucide.Map; 
@@ -141,6 +134,21 @@
           ]
         };
 
+        const getSavedState = () => {
+          try {
+            const saved = localStorage.getItem('spacePlannerState');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (parsed && parsed.buildings && parsed.floors) {
+                return parsed;
+              }
+            }
+          } catch (e) {
+            console.error("Gagal membaca localStorage", e);
+          }
+          return INITIAL_APP_STATE;
+        };
+
         const useUndoableState = (initialState) => {
           const [state, setState] = useState(initialState);
           const [past, setPast] = useState([]);
@@ -188,7 +196,7 @@
         };
 
         const App = () => {
-          const [appState, setAppState, undo, redo, canUndo, canRedo] = useUndoableState(INITIAL_APP_STATE);
+          const [appState, setAppState, undo, redo, canUndo, canRedo] = useUndoableState(getSavedState);
           
           const { projectName, projectLocation, landArea, kdbLimit, ktbLimit, kdhLimit, klbLimit, maxFloorsLimit, factors, zones, buildings, floors, rooms } = appState;
 
@@ -220,6 +228,7 @@
           const [reportSortBy, setReportSortBy] = useState('default');
           const [isExportingExcel, setIsExportingExcel] = useState(false);
           const [isPrinting, setIsPrinting] = useState(false);
+          const [isAutosaving, setIsAutosaving] = useState(false);
 
           const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
 
@@ -241,6 +250,20 @@
               setActiveBuildingId(buildings[0]?.id || null);
             }
           }, [buildings, activeBuildingId]);
+
+          // AUTOSAVE EFFECT
+          useEffect(() => {
+            const timeoutId = setTimeout(() => {
+              try {
+                localStorage.setItem('spacePlannerState', JSON.stringify(appState));
+                setIsAutosaving(true);
+                setTimeout(() => setIsAutosaving(false), 2000);
+              } catch (e) {
+                console.error("Autosave gagal", e);
+              }
+            }, 1000); // Menyimpan 1 detik setelah perubahan terakhir
+            return () => clearTimeout(timeoutId);
+          }, [appState]);
 
           const referenceSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.notes).filter(n => n && n.trim() !== ''))), [rooms]);
           const roomNameSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.label).filter(n => n && n.trim() !== '' && n !== 'Ruang Baru'))), [rooms]);
@@ -343,6 +366,15 @@
           }, [rooms, floors, buildings, zones, factors, landArea, ktbLimit, kdhLimit, klbLimit, kdbLimit]);
 
           // ACTIONS
+          const handleNewProject = useCallback(() => {
+            showConfirm("Apakah Anda yakin ingin memulai proyek baru dari awal? Pastikan proyek saat ini sudah Anda 'Simpan' ke komputer agar tidak hilang.", () => {
+                setAppState(INITIAL_APP_STATE);
+                setActiveBuildingId(INITIAL_APP_STATE.buildings[0].id);
+                setCollapsedFloors({});
+                localStorage.removeItem('spacePlannerState');
+            }, "Buat Proyek Baru");
+          }, [setAppState, showConfirm]);
+
           const addBuilding = () => {
             const newId = `b${Date.now()}`;
             const newFloorId = `f${Date.now()}`;
@@ -995,13 +1027,19 @@
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 border-r border-slate-200 pr-4">
+                    <div className="flex items-center gap-2 border-r border-slate-200 pr-4 relative">
+                      <button onClick={handleNewProject} title="Buat Proyek Baru" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 transition-colors">
+                        {FilePlus && <FilePlus className="w-4 h-4" />} Baru
+                      </button>
                       <button onClick={() => fileInputRef.current.click()} title="Buka Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors">
                         {FolderOpen && <FolderOpen className="w-4 h-4" />} Buka
                       </button>
                       <button onClick={handleSaveProject} title="Simpan Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors">
                         {Save && <Save className="w-4 h-4" />} Simpan
                       </button>
+                      <span className={`absolute -bottom-3 right-4 text-[8px] font-bold text-emerald-500 transition-opacity duration-500 ${isAutosaving ? 'opacity-100' : 'opacity-0'}`}>
+                        ✓ Tersimpan otomatis
+                      </span>
                     </div>
                     <div className="flex items-center gap-1 border-r border-slate-200 pr-4">
                       <button onClick={undo} disabled={!canUndo} className={`p-2 rounded-lg transition-colors ${canUndo ? 'text-slate-700 hover:bg-slate-100 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}>{Undo2 && <Undo2 className="w-5 h-5" />}</button>
@@ -1768,8 +1806,6 @@
                   </div>
                 </div>
               )}
-
-              <footer className="max-w-6xl mx-auto px-4 py-8 mt-4 text-center text-[11px] font-bold text-slate-400 tracking-wider print:hidden">© 2026 AfifHW. Powered by Gemini AI</footer>
             </div>
           );
         };
