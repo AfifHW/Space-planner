@@ -256,6 +256,8 @@
           const [dragOverFloorIdx, setDragOverFloorIdx] = useState(null);
           const [draggedBuildingIdx, setDraggedBuildingIdx] = useState(null);
           const [dragOverBuildingIdx, setDragOverBuildingIdx] = useState(null);
+          const [draggedRoomId, setDraggedRoomId] = useState(null);
+          const [dragOverRoomId, setDragOverRoomId] = useState(null);
           
           // Modals untuk Ruangan
           const [moveModal, setMoveModal] = useState({ isOpen: false, targetFloorId: '' });
@@ -701,6 +703,27 @@
             setDraggedBuildingIdx(null); setDragOverBuildingIdx(null);
           };
           const handleBuildingDragEnd = () => { setDraggedBuildingIdx(null); setDragOverBuildingIdx(null); };
+
+          const handleRoomDragStart = (e, id) => { setDraggedRoomId(id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); };
+          const handleRoomDragOver = (e, id) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverRoomId !== id) setDragOverRoomId(id); };
+          const handleRoomDrop = (e, targetId) => {
+            e.preventDefault(); e.stopPropagation();
+            if (draggedRoomId !== null && draggedRoomId !== targetId) {
+                setAppState(prev => {
+                    const newRooms = [...prev.rooms];
+                    const draggedIdx = newRooms.findIndex(r => r.id === draggedRoomId);
+                    const targetIdx = newRooms.findIndex(r => r.id === targetId);
+                    if (draggedIdx !== -1 && targetIdx !== -1) {
+                        const [movedRoom] = newRooms.splice(draggedIdx, 1);
+                        movedRoom.floorId = newRooms[targetIdx]?.floorId || movedRoom.floorId;
+                        newRooms.splice(targetIdx, 0, movedRoom);
+                    }
+                    return { ...prev, rooms: newRooms };
+                });
+            }
+            setDraggedRoomId(null); setDragOverRoomId(null);
+          };
+          const handleRoomDragEnd = () => { setDraggedRoomId(null); setDragOverRoomId(null); };
 
           // Keyboard Grid Navigation
           const handleRoomGridNav = (e, floorId, roomId, colName) => {
@@ -1631,7 +1654,7 @@
                                               <table className="w-full text-sm text-left border-collapse">
                                                 <thead className="sticky top-0 z-20 bg-zinc-100/95 backdrop-blur-[2px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-zinc-200">
                                                   <tr>
-                                                    <th className="py-2.5 px-3 w-10 text-center border-r border-zinc-200/50">
+                                                    <th className="py-2.5 px-2 w-14 text-center border-r border-zinc-200/50">
                                                       <input 
                                                         type="checkbox" 
                                                         className="w-3.5 h-3.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1662,15 +1685,25 @@
                                                     return (
                                                       <tr 
                                                         key={room.id} 
-                                                        className={`group/row transition-all duration-150 ${isSelected ? 'bg-blue-50/60' : isFocused ? 'bg-white shadow-[0_0_0_2px_rgba(59,130,246,0.4)] z-10 relative scale-[1.002]' : 'hover:bg-zinc-50/80 bg-white'}`}
+                                                        draggable
+                                                        onDragStart={(e) => handleRoomDragStart(e, room.id)}
+                                                        onDragOver={(e) => handleRoomDragOver(e, room.id)}
+                                                        onDrop={(e) => handleRoomDrop(e, room.id)}
+                                                        onDragEnd={handleRoomDragEnd}
+                                                        className={`group/row transition-all duration-150 ${isSelected ? 'bg-blue-50/60' : isFocused ? 'bg-white shadow-[0_0_0_2px_rgba(59,130,246,0.4)] z-10 relative scale-[1.002]' : 'hover:bg-zinc-50/80 bg-white'} ${draggedRoomId === room.id ? 'opacity-40 scale-[0.99] border border-blue-400' : ''} ${dragOverRoomId === room.id && draggedRoomId !== room.id ? 'shadow-[inset_0_3px_0_0_rgba(59,130,246,1)]' : ''}`}
                                                       >
-                                                        <td className="py-2 px-3 text-center border-r border-zinc-100">
-                                                          <input 
-                                                            type="checkbox" 
-                                                            className="w-3.5 h-3.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                            checked={isSelected}
-                                                            onChange={() => toggleRoomSelection(room.id)}
-                                                          />
+                                                        <td className="py-2 px-2 border-r border-zinc-100">
+                                                          <div className="flex items-center justify-center gap-1.5">
+                                                            <div className="cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-600 opacity-20 group-hover/row:opacity-100 transition-opacity" title="Tahan dan geser untuk pindah posisi">
+                                                              {GripVertical && <GripVertical className="w-3.5 h-3.5" />}
+                                                            </div>
+                                                            <input 
+                                                              type="checkbox" 
+                                                              className="w-3.5 h-3.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                              checked={isSelected}
+                                                              onChange={() => toggleRoomSelection(room.id)}
+                                                            />
+                                                          </div>
                                                         </td>
                                                         <td className="py-2 px-3 border-r border-zinc-100">
                                                             <select 
