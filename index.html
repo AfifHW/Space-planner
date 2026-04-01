@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Schematic Space Planner</title>
+    <title>Schematic Space Planner Pro</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -158,8 +158,8 @@
             { id: 'z3', label: 'Privat', colorId: 'purple' }
           ],
           parkingRules: [
-            { id: 'pr1', name: 'Kebutuhan Mobil', vehicleType: 'Mobil', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25 },
-            { id: 'pr2', name: 'Kebutuhan Motor', vehicleType: 'Motor', basis: 'gfa', targetZoneIds: [], ratio: 50, areaPerVehicle: 2 }
+            { id: 'pr1', name: 'Kebutuhan Mobil', vehicleType: 'Mobil', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25 },
+            { id: 'pr2', name: 'Kebutuhan Motor', vehicleType: 'Motor', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 50, areaPerVehicle: 2 }
           ],
           buildings: [
             { id: 'b1', name: 'Gedung Utama', kdbFloorId: 'f1', ktbFloorId: '', notes: '' },
@@ -187,6 +187,7 @@
                   parsed.parkingRules = parsed.parkingRules.map(pr => {
                       if (pr.targetZoneId !== undefined) { pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : []; delete pr.targetZoneId; }
                       if (!pr.targetZoneIds) pr.targetZoneIds = [];
+                      if (!pr.calcMethod) pr.calcMethod = 'ratio'; // Migrate legacy parking rules
                       return pr;
                   });
                   return parsed;
@@ -329,7 +330,6 @@
               let occupantsFloor = 0;
               const nettoFloor = rooms.filter(r => r.floorId === f.id).reduce((acc, r) => {
                 const count = safeNum(r.count);
-                // Mengubah perhitungan penghuni: tidak lagi dikalikan dengan 'count'
                 const headCount = (r.occupants !== undefined && r.occupants !== '') ? safeNum(r.occupants) : 0;
                 occupantsFloor += headCount;
                 return acc + (count * safeNum(r.std));
@@ -376,7 +376,42 @@
                 return { id: z.id, name: z.label, area: zNettoArea, brutoArea: zBrutoArea, style: getZoneStyle(z.colorId) };
               });
 
-              return { ...b, floors: bFloors, netto: bNetto, bruto: bBruto, footprint: bFootprint, basementFootprint: bBasementFootprint, heightAbove, depthBelow, zoneBreakdown: bZoneBreakdown, occupants: bOccupants };
+              // PERHITUNGAN PARKIR SPESIFIK PER GEDUNG
+              const bParkingStats = {
+                  totalArea: 0,
+                  totalCount: 0,
+                  details: parkingRules.map(rule => {
+                      let baseValue = 0; let basisLabel = '';
+                      if (rule.basis === 'gfa') { baseValue = bBruto; basisLabel = 'GFA Gedung'; }
+                      else if (rule.basis === 'occupants') { baseValue = bOccupants; basisLabel = 'Penghuni Gedung'; }
+                      else if (rule.basis === 'zone') {
+                          if (rule.targetZoneIds && rule.targetZoneIds.length > 0) {
+                              let combinedArea = 0; let zoneNames = [];
+                              rule.targetZoneIds.forEach(zId => {
+                                  const zStats = bZoneBreakdown.find(z => z.id === zId);
+                                  if (zStats) { combinedArea += zStats.brutoArea; zoneNames.push(zStats.name); }
+                              });
+                              baseValue = combinedArea; basisLabel = `Zona ${zoneNames.join(', ')}`;
+                          } else { baseValue = 0; basisLabel = 'Pilih Zona Target'; }
+                      }
+
+                      let count = 0;
+                      if (rule.calcMethod === 'percentage') {
+                          count = Math.ceil(baseValue * (rule.ratio / 100));
+                      } else {
+                          count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
+                      }
+
+                      const area = count * rule.areaPerVehicle;
+                      const ruleDesc = rule.calcMethod === 'percentage' ? `${rule.ratio}%` : `1 per ${rule.ratio}`;
+
+                      return { ...rule, baseValue, basisLabel, count, area, ruleDesc };
+                  })
+              };
+              bParkingStats.totalArea = bParkingStats.details.reduce((sum, d) => sum + d.area, 0);
+              bParkingStats.totalCount = bParkingStats.details.reduce((sum, d) => sum + d.count, 0);
+
+              return { ...b, floors: bFloors, netto: bNetto, bruto: bBruto, footprint: bFootprint, basementFootprint: bBasementFootprint, heightAbove, depthBelow, zoneBreakdown: bZoneBreakdown, occupants: bOccupants, parkingStats: bParkingStats };
             });
 
             const currentKDB = lArea > 0 ? (globalFootprintArea / lArea) * 100 : 0;
@@ -403,6 +438,7 @@
               return { id: z.id, name: z.label, area: nettoArea, brutoArea: brutoArea, style: getZoneStyle(z.colorId) };
             });
 
+            // GLOBAL PARKING STATS (Dihitung dari kawasan total)
             const parkingStats = {
                 totalArea: 0,
                 totalCount: 0,
@@ -421,9 +457,17 @@
                         } else { baseValue = 0; basisLabel = 'Pilih Zona Target'; }
                     }
 
-                    const count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
+                    let count = 0;
+                    if (rule.calcMethod === 'percentage') {
+                        count = Math.ceil(baseValue * (rule.ratio / 100));
+                    } else {
+                        count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
+                    }
+
                     const area = count * rule.areaPerVehicle;
-                    return { ...rule, baseValue, basisLabel, count, area };
+                    const ruleDesc = rule.calcMethod === 'percentage' ? `${rule.ratio}%` : `1 per ${rule.ratio}`;
+
+                    return { ...rule, baseValue, basisLabel, count, area, ruleDesc };
                 })
             };
             parkingStats.totalArea = parkingStats.details.reduce((sum, d) => sum + d.area, 0);
@@ -487,7 +531,7 @@
           };
           const updateZone = (id, field, value) => setZones(prev => prev.map(z => z.id === id ? { ...z, [field]: value } : z));
 
-          const addParkingRule = () => { const newId = `pr${Date.now()}`; setParkingRules(prev => [...prev, { id: newId, name: 'Aturan Baru', vehicleType: 'Mobil', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25 }]); };
+          const addParkingRule = () => { const newId = `pr${Date.now()}`; setParkingRules(prev => [...prev, { id: newId, name: 'Aturan Baru', vehicleType: 'Mobil', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25 }]); };
           const updateParkingRule = (id, field, value) => setParkingRules(prev => prev.map(pr => pr.id === id ? { ...pr, [field]: value } : pr));
           const removeParkingRule = (id) => setParkingRules(prev => prev.filter(pr => pr.id !== id));
 
@@ -811,6 +855,7 @@
                   loadedState.parkingRules = loadedState.parkingRules.map(pr => {
                       if (pr.targetZoneId !== undefined) { pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : []; delete pr.targetZoneId; }
                       if (!pr.targetZoneIds) pr.targetZoneIds = [];
+                      if (!pr.calcMethod) pr.calcMethod = 'ratio';
                       return pr;
                   });
                   setAppState(loadedState); setActiveBuildingId(loadedState.buildings[0].id); setShowProjectParams(false);
@@ -882,11 +927,11 @@
                 const sisaKuotaKLB = stats.maxAllowedKLBArea - stats.brutoTotal;
                 wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]); wsData.push([]);
 
-                // Tabel Parkir
-                wsData.push([c("KEBUTUHAN PARKIR", styleSubtitle)]); wsData.push([]);
+                // Tabel Parkir Keseluruhan
+                wsData.push([c("KEBUTUHAN PARKIR (KESELURUHAN)", styleSubtitle)]); wsData.push([]);
                 wsData.push([c("Aturan Parkir", styleHeader), c("Basis", styleHeader), c("Kendaraan", styleHeader), c("Jml Dibutuhkan", styleHeader), c("Est. Luas", styleHeader)]);
                 stats.parkingStats.details.forEach(pr => {
-                    wsData.push([c(`${pr.name} (1 per ${pr.ratio})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
+                    wsData.push([c(`${pr.name} (${pr.ruleDesc})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
                 });
                 wsData.push([c("TOTAL KEBUTUHAN LAHAN PARKIR", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.totalArea} m²`, styleDataNumberBold)]);
                 wsData.push([c("Sisa Lahan Permukaan (Di luar KDB)", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.remainingSurfaceArea.toFixed(1)} m²`, styleDataNumberBold)]);
@@ -896,6 +941,18 @@
                    wsData.push([c(`RINCIAN: ${b.name.toUpperCase()}`, styleSubtitle)]);
                    if (b.notes && b.notes.trim() !== '') wsData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "52525B" } } })]);
                    wsData.push([]);
+                   
+                   // Perhitungan Parkir Spesifik Gedung ini di Excel
+                   if (b.parkingStats && b.parkingStats.details.length > 0) {
+                       wsData.push([c("Estimasi Kebutuhan Parkir Gedung", { font: { bold: true, color: { rgb: "52525B" } } })]);
+                       wsData.push([c("Aturan", styleDataText), c("Basis", styleDataText), c("Kendaraan", styleDataText), c("Jml", styleDataText), c("Luas", styleDataText)]);
+                       b.parkingStats.details.forEach(pr => {
+                           wsData.push([c(pr.name, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
+                       });
+                       wsData.push([c("Subtotal Parkir Gedung", styleBold), c("", emptyBorder), c("", emptyBorder), c(b.parkingStats.totalCount, styleDataNumberBold), c(`${b.parkingStats.totalArea} m²`, styleDataNumberBold)]);
+                       wsData.push([]);
+                   }
+
                    wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jml Ruang", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Penghuni", styleHeader), c("Keterangan", styleHeader) ]);
 
                    b.floors.forEach(f => {
@@ -938,7 +995,7 @@
                 const styleGrandTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
                 const styleGrandTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
 
-                wsData.push([ c("", { border: borderAll, fill: grandTotalFill }), c("TOTAL GFA", styleGrandTotalText), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }) ]);
+                wsData.push([ c("", { border: borderAll, fill: grandTotalFill }), c("TOTAL GFA KAWASAN", styleGrandTotalText), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }) ]);
                 wsData.push([]);
 
                 const wb = window.XLSX.utils.book_new(); const ws = window.XLSX.utils.aoa_to_sheet(wsData);
@@ -1165,6 +1222,44 @@
                             </div>
                         </div>
 
+                        {/* RINCIAN PARKIR PER GEDUNG */}
+                        <div className="mb-8 print:break-inside-avoid">
+                            <h3 className="font-black text-zinc-800 text-lg uppercase tracking-wider mb-4 border-b border-zinc-200 pb-2">Rincian Kebutuhan Per Gedung</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {stats.buildingDetails.map(b => (
+                                    <div key={b.id} className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm print:border-zinc-300">
+                                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-zinc-100">
+                                            <h4 className="font-black text-zinc-800 text-sm uppercase tracking-wider flex items-center gap-2">
+                                                {Building && <Building className="w-4 h-4 text-zinc-400" />} {b.name}
+                                            </h4>
+                                            <div className="text-xs font-bold bg-zinc-100 px-2 py-1 rounded text-zinc-600 font-mono">
+                                                {b.parkingStats.totalArea.toLocaleString('id-ID')} m²
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3">
+                                            {b.parkingStats.details.map(pr => {
+                                                if (pr.count === 0) return null;
+                                                return (
+                                                    <div key={pr.id} className="flex justify-between items-center">
+                                                        <div>
+                                                            <div className="text-xs font-bold text-zinc-700">{pr.name}</div>
+                                                            <div className="text-[9px] text-zinc-500 truncate max-w-[150px]" title={pr.basisLabel}>{pr.basisLabel}: {pr.baseValue.toLocaleString('id-ID')}</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-sm font-black text-blue-600 font-mono">{pr.count} <span className="text-[9px] text-zinc-500 uppercase font-sans">{pr.vehicleType}</span></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {b.parkingStats.details.every(pr => pr.count === 0) && (
+                                                <div className="text-xs text-zinc-400 italic py-2 text-center">Gedung ini tidak memiliki beban parkir.</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         {/* RULE MANAGER */}
                         <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid">
                             <div className="flex justify-between items-center mb-6 pb-4 border-b border-zinc-100 print:border-black">
@@ -1203,12 +1298,19 @@
                                                         <label className="text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-1.5">Luas/Unit (m²)</label>
                                                         <input type="number" step="0.1" value={rule.areaPerVehicle} onChange={(e) => updateParkingRule(rule.id, 'areaPerVehicle', Number(e.target.value))} className="w-full bg-white border border-zinc-200 rounded-md px-3 py-2 text-sm font-mono font-bold text-zinc-700 outline-none focus:ring-2 focus:ring-blue-400" title="Standar luas 1 petak parkir + sirkulasi manuver" />
                                                     </div>
-                                                    <div className="col-span-2">
+                                                    <div>
                                                         <label className="text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-1.5">Basis Hitungan</label>
                                                         <select value={rule.basis} onChange={(e) => updateParkingRule(rule.id, 'basis', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-md px-3 py-2 text-sm font-bold text-zinc-700 outline-none focus:ring-2 focus:ring-blue-400">
-                                                            <option value="gfa">Luas GFA Total (Seluruh Kawasan)</option>
-                                                            <option value="zone">Luas Bruto Zona Spesifik</option>
-                                                            <option value="occupants">Jml Penghuni Keseluruhan</option>
+                                                            <option value="gfa">Luas GFA Kawasan</option>
+                                                            <option value="zone">Luas Bruto Zona</option>
+                                                            <option value="occupants">Jml Penghuni</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-1.5">Metode Kalkulasi</label>
+                                                        <select value={rule.calcMethod || 'ratio'} onChange={(e) => updateParkingRule(rule.id, 'calcMethod', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-md px-3 py-2 text-sm font-bold text-zinc-700 outline-none focus:ring-2 focus:ring-blue-400">
+                                                            <option value="ratio">Rasio (1 unit / X)</option>
+                                                            <option value="percentage">Persentase (X%)</option>
                                                         </select>
                                                     </div>
                                                     
@@ -1238,9 +1340,19 @@
                                                 </div>
                                                 
                                                 <div className="bg-blue-50/50 border border-blue-100 rounded-md p-3 flex items-center gap-3">
-                                                    <span className="text-xs font-bold text-blue-800">Sediakan 1 {rule.vehicleType} untuk setiap</span>
-                                                    <input type="number" value={rule.ratio} onChange={(e) => updateParkingRule(rule.id, 'ratio', Number(e.target.value))} className="w-20 bg-white border border-blue-200 rounded-md px-2 py-1 text-center text-sm font-mono font-black text-blue-700 outline-none focus:ring-2 focus:ring-blue-400" />
-                                                    <span className="text-xs font-bold text-blue-800">{rule.basis === 'occupants' ? 'Orang/Penghuni' : 'm² Luas Bangunan'}</span>
+                                                    {rule.calcMethod === 'percentage' ? (
+                                                        <React.Fragment>
+                                                            <span className="text-xs font-bold text-blue-800">Sediakan {rule.vehicleType} sebanyak</span>
+                                                            <input type="number" value={rule.ratio} onChange={(e) => updateParkingRule(rule.id, 'ratio', Number(e.target.value))} className="w-20 bg-white border border-blue-200 rounded-md px-2 py-1 text-center text-sm font-mono font-black text-blue-700 outline-none focus:ring-2 focus:ring-blue-400" />
+                                                            <span className="text-xs font-bold text-blue-800">% dari total {rule.basis === 'occupants' ? 'Penghuni' : 'Luas Area'}</span>
+                                                        </React.Fragment>
+                                                    ) : (
+                                                        <React.Fragment>
+                                                            <span className="text-xs font-bold text-blue-800">Sediakan 1 {rule.vehicleType} untuk setiap</span>
+                                                            <input type="number" value={rule.ratio} onChange={(e) => updateParkingRule(rule.id, 'ratio', Number(e.target.value))} className="w-20 bg-white border border-blue-200 rounded-md px-2 py-1 text-center text-sm font-mono font-black text-blue-700 outline-none focus:ring-2 focus:ring-blue-400" />
+                                                            <span className="text-xs font-bold text-blue-800">{rule.basis === 'occupants' ? 'Orang/Penghuni' : 'm² Luas Bangunan'}</span>
+                                                        </React.Fragment>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -1590,8 +1702,6 @@
                                         onDrop={(e) => handleDrop(e, fIdx)} 
                                         onDragEnd={handleDragEnd} 
                                         className={`bg-white rounded-lg border ${draggedFloorIdx === fIdx ? 'opacity-50 border-blue-400 border-dashed scale-[0.99]' : 'border-zinc-300'} ${dragOverFloorIdx === fIdx && draggedFloorIdx !== fIdx ? 'border-t-4 border-t-blue-500 shadow-md' : ''} shadow-sm overflow-hidden transition-all duration-200 relative group/floor`} 
-                                        onFocus={() => setLastActiveFloorId(f.id)} 
-                                        onClick={() => setLastActiveFloorId(f.id)}
                                     >
                                       
                                       {/* Indicator KDB/KTB */}
