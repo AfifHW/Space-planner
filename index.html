@@ -49,10 +49,8 @@
     </div>
 
     <script type="text/babel" data-presets="react">
-        // 1. Ekstrak Hooks dari React
         const { useState, useMemo, useEffect, useCallback, useRef } = window.React;
         
-        // 2. Ekstrak Icon dari LucideReact secara aman
         const lucide = window.lucideReact || window.LucideReact || {};
         const {
             Users, Layout, Settings, Calculator, FileText, Plus, Trash2, Info,
@@ -60,51 +58,32 @@
             PieChart, Palette, Settings2, AlertTriangle, CheckCircle2, LandPlot,
             Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
             MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
-            Building, FilePlus, Sparkles, Loader2, MoveRight
+            Building, FilePlus, Sparkles, Loader2, MoveRight, Car, ParkingCircle, Bus, Bike
         } = lucide;
-        // Penanganan duplikasi alias di Lucide
         const MapIcon = lucide.Map; 
-        const MapComponent = lucide.Map; 
 
         // --- GEMINI API CONFIGURATION ---
         const apiKey = ""; 
         const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
         const callGeminiAPI = async (systemInstruction, promptText) => {
-            let payload = {
-                contents: [{ parts: [{ text: promptText }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] }
-            };
-
-            let retries = 3;
-            let delay = 1000;
-            
+            let payload = { contents: [{ parts: [{ text: promptText }] }], systemInstruction: { parts: [{ text: systemInstruction }] } };
+            let retries = 3; let delay = 1000;
             while (retries > 0) {
                 try {
-                    const response = await fetch(GEMINI_API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    
+                    const response = await fetch(GEMINI_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    
                     const data = await response.json();
                     const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    
                     if (!textResponse) throw new Error("Empty response from Gemini");
                     return textResponse;
                 } catch (error) {
-                    console.warn(`Gemini API Error, retries left: ${retries - 1}`, error);
-                    retries--;
-                    if (retries === 0) throw error;
-                    await new Promise(res => setTimeout(res, delay));
-                    delay *= 2; 
+                    retries--; if (retries === 0) throw error;
+                    await new Promise(res => setTimeout(res, delay)); delay *= 2; 
                 }
             }
         };
 
-        // 3. Error Boundary Component untuk menangkap error UI/Render
         class ErrorBoundary extends React.Component {
           constructor(props) { super(props); this.state = { hasError: false, error: null }; }
           static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -131,10 +110,6 @@
           { id: 'slate', color: 'bg-slate-100 text-slate-700', border: 'border-slate-200' },
         ];
 
-        const DEFAULT_REFERENCES = [];
-        const DEFAULT_ROOM_NAMES = [];
-
-        // Status Awal Aplikasi (Sudah mendukung Multi-Building & assign zone ke faktor)
         const INITIAL_APP_STATE = {
           projectName: 'Nama Proyek',
           projectLocation: 'Lokasi Proyek',
@@ -154,6 +129,10 @@
             { id: 'z1', label: 'Publik', colorId: 'blue' },
             { id: 'z2', label: 'Semi-Publik', colorId: 'emerald' },
             { id: 'z3', label: 'Privat', colorId: 'purple' }
+          ],
+          parkingRules: [
+            { id: 'pr1', name: 'Kebutuhan Mobil', vehicleType: 'Mobil', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25 },
+            { id: 'pr2', name: 'Kebutuhan Motor', vehicleType: 'Motor', basis: 'gfa', targetZoneIds: [], ratio: 50, areaPerVehicle: 2 }
           ],
           
           buildings: [
@@ -178,12 +157,20 @@
             if (saved) {
               const parsed = JSON.parse(saved);
               if (parsed && parsed.buildings && parsed.floors) {
-                return parsed;
+                  if(!parsed.parkingRules) parsed.parkingRules = INITIAL_APP_STATE.parkingRules;
+                  
+                  parsed.parkingRules = parsed.parkingRules.map(pr => {
+                      if (pr.targetZoneId !== undefined) {
+                          pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : [];
+                          delete pr.targetZoneId;
+                      }
+                      if (!pr.targetZoneIds) pr.targetZoneIds = [];
+                      return pr;
+                  });
+                  return parsed;
               }
             }
-          } catch (e) {
-            console.error("Gagal membaca localStorage", e);
-          }
+          } catch (e) { console.error("Gagal membaca localStorage", e); }
           return INITIAL_APP_STATE;
         };
 
@@ -191,45 +178,29 @@
           const [state, setState] = useState(initialState);
           const [past, setPast] = useState([]);
           const [future, setFuture] = useState([]);
-
           const set = useCallback((newStateUpdater) => {
             setState(prev => {
               const nextState = typeof newStateUpdater === 'function' ? newStateUpdater(prev) : newStateUpdater;
-              if (JSON.stringify(prev) !== JSON.stringify(nextState)) {
-                setPast(p => {
-                  const newPast = [...p, prev];
-                  return newPast.length > 50 ? newPast.slice(newPast.length - 50) : newPast; 
-                });
-                setFuture([]); 
-              }
+              if (JSON.stringify(prev) !== JSON.stringify(nextState)) { setPast(p => [...p, prev].slice(-50)); setFuture([]); }
               return nextState;
             });
           }, []);
-
           const undo = useCallback(() => {
             setPast(p => {
               if (p.length === 0) return p;
               const previous = p[p.length - 1];
-              setState(currentState => {
-                setFuture(f => [currentState, ...f]);
-                return previous;
-              });
+              setState(currentState => { setFuture(f => [currentState, ...f]); return previous; });
               return p.slice(0, p.length - 1);
             });
           }, []);
-
           const redo = useCallback(() => {
             setFuture(f => {
               if (f.length === 0) return f;
               const next = f[0];
-              setState(currentState => {
-                setPast(p => [...p, currentState]);
-                return next;
-              });
+              setState(currentState => { setPast(p => [...p, currentState]); return next; });
               return f.slice(1);
             });
           }, []);
-
           return [state, set, undo, redo, past.length > 0, future.length > 0];
         };
 
@@ -237,8 +208,8 @@
           const [appState, setAppState, undo, redo, canUndo, canRedo] = useUndoableState(getSavedState);
           
           const { projectName, projectLocation, landArea, kdbLimit, ktbLimit, kdhLimit, klbLimit, maxFloorsLimit, factors, zones, buildings, floors, rooms } = appState;
+          const parkingRules = appState.parkingRules || INITIAL_APP_STATE.parkingRules;
 
-          // Global Setters
           const setProjectName = (val) => setAppState(prev => ({ ...prev, projectName: typeof val === 'function' ? val(prev.projectName) : val }));
           const setProjectLocation = (val) => setAppState(prev => ({ ...prev, projectLocation: typeof val === 'function' ? val(prev.projectLocation) : val }));
           const setLandArea = (val) => setAppState(prev => ({ ...prev, landArea: typeof val === 'function' ? val(prev.landArea) : val }));
@@ -249,8 +220,8 @@
           const setMaxFloorsLimit = (val) => setAppState(prev => ({ ...prev, maxFloorsLimit: typeof val === 'function' ? val(prev.maxFloorsLimit) : val }));
           const setFactors = (val) => setAppState(prev => ({ ...prev, factors: typeof val === 'function' ? val(prev.factors) : val }));
           const setZones = (val) => setAppState(prev => ({ ...prev, zones: typeof val === 'function' ? val(prev.zones) : val }));
+          const setParkingRules = (val) => setAppState(prev => ({ ...prev, parkingRules: typeof val === 'function' ? val(prev.parkingRules || []) : val }));
 
-          // UI State
           const [activeTab, setActiveTab] = useState('input');
           const [activeBuildingId, setActiveBuildingId] = useState(buildings[0]?.id || null);
           const [showZoneManager, setShowZoneManager] = useState(false);
@@ -271,38 +242,21 @@
           const [isAutosaving, setIsAutosaving] = useState(false);
           const [aiLoadingState, setAiLoadingState] = useState({});
           const [focusRoomId, setFocusRoomId] = useState(null);
-
           const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
 
-          const showAlert = useCallback((message, title = "Informasi") => {
-            setDialog({ isOpen: true, title, message, type: 'alert', onConfirm: null });
-          }, []);
-
-          const showConfirm = useCallback((message, onConfirm, title = "Konfirmasi") => {
-            setDialog({ isOpen: true, title, message, type: 'confirm', onConfirm });
-          }, []);
-
+          const showAlert = useCallback((message, title = "Informasi") => setDialog({ isOpen: true, title, message, type: 'alert', onConfirm: null }), []);
+          const showConfirm = useCallback((message, onConfirm, title = "Konfirmasi") => setDialog({ isOpen: true, title, message, type: 'confirm', onConfirm }), []);
           const fileInputRef = useRef(null);
           const getZoneStyle = (colorId) => ZONE_COLORS.find(c => c.id === colorId) || ZONE_COLORS[0];
 
           useEffect(() => {
-            if (!activeBuildingId && buildings.length > 0) {
-              setActiveBuildingId(buildings[0].id);
-            } else if (activeBuildingId && !buildings.find(b => b.id === activeBuildingId)) {
-              setActiveBuildingId(buildings[0]?.id || null);
-            }
+            if (!activeBuildingId && buildings.length > 0) setActiveBuildingId(buildings[0].id);
+            else if (activeBuildingId && !buildings.find(b => b.id === activeBuildingId)) setActiveBuildingId(buildings[0]?.id || null);
           }, [buildings, activeBuildingId]);
 
-          // AUTOSAVE EFFECT
           useEffect(() => {
             const timeoutId = setTimeout(() => {
-              try {
-                localStorage.setItem('spacePlannerState', JSON.stringify(appState));
-                setIsAutosaving(true);
-                setTimeout(() => setIsAutosaving(false), 2000);
-              } catch (e) {
-                console.error("Autosave gagal", e);
-              }
+              try { localStorage.setItem('spacePlannerState', JSON.stringify(appState)); setIsAutosaving(true); setTimeout(() => setIsAutosaving(false), 2000); } catch (e) { console.error("Autosave gagal", e); }
             }, 1000); 
             return () => clearTimeout(timeoutId);
           }, [appState]);
@@ -310,18 +264,10 @@
           const referenceSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.notes).filter(n => n && n.trim() !== ''))).slice(0, 3), [rooms]);
           const roomNameSuggestions = useMemo(() => Array.from(new Set(rooms.map(r => r.label).filter(n => n && n.trim() !== '' && n !== 'Ruang Baru'))).slice(0, 3), [rooms]);
 
-          // Focus effect untuk ruangan yang baru saja ditambahkan
           useEffect(() => {
-            if (focusRoomId) {
-              const el = document.getElementById(`room-name-input-${focusRoomId}`);
-              if (el) {
-                el.focus();
-                setFocusRoomId(null);
-              }
-            }
+            if (focusRoomId) { const el = document.getElementById(`room-name-input-${focusRoomId}`); if (el) { el.focus(); setFocusRoomId(null); } }
           }, [rooms, focusRoomId]);
 
-          // STATS CALCULATION (Updated untuk Zone Targeting)
           const stats = useMemo(() => {
             const safeNum = (val) => Number(val) || 0;
             const lArea = safeNum(landArea);
@@ -329,12 +275,10 @@
             const ktLimit = safeNum(ktbLimit);
             const klLimit = safeNum(klbLimit);
 
-            let globalNettoTotal = 0;
-            let globalBrutoTotal = 0;
-            let globalFootprintArea = 0;
-            let globalBasementFootprintArea = 0;
-            const globalFactorAreas = {};
-            factors.forEach(fac => globalFactorAreas[fac.id] = 0);
+            let globalNettoTotal = 0; let globalBrutoTotal = 0;
+            let globalFootprintArea = 0; let globalBasementFootprintArea = 0;
+            let globalOccupantsTotal = 0;
+            const globalFactorAreas = {}; factors.forEach(fac => globalFactorAreas[fac.id] = 0);
 
             const floorDetails = floors.map(f => {
               let occupantsFloor = 0;
@@ -353,8 +297,7 @@
               });
 
               const brutoFloor = nettoFloor * (1 + totalMultiplier / 100);
-              globalNettoTotal += nettoFloor;
-              globalBrutoTotal += brutoFloor;
+              globalNettoTotal += nettoFloor; globalBrutoTotal += brutoFloor; globalOccupantsTotal += occupantsFloor;
               
               return { ...f, netto: nettoFloor, bruto: brutoFloor, totalMultiplier, occupants: occupantsFloor };
             });
@@ -367,40 +310,23 @@
               const bFootprint = bFloors.find(fd => fd.id === b.kdbFloorId)?.bruto || 0;
               const bBasementFootprint = bFloors.find(fd => fd.id === b.ktbFloorId)?.bruto || 0;
               
-              globalFootprintArea += bFootprint;
-              globalBasementFootprintArea += bBasementFootprint;
+              globalFootprintArea += bFootprint; globalBasementFootprintArea += bBasementFootprint;
 
               const heightAbove = bFloors.filter(f => !f.isBasement).reduce((acc, f) => acc + Math.abs(safeNum(f.floorHeight)), 0);
               const depthBelow = bFloors.filter(f => f.isBasement).reduce((acc, f) => acc + Math.abs(safeNum(f.floorHeight)), 0);
 
               const bZoneBreakdown = zones.map(z => {
                 let zNettoArea = 0; let zBrutoArea = 0;
-                
-                // 1. Dapatkan area dasar ruangan per zona, PLUS proporsi faktor global (tanpa zona)
                 rooms.filter(r => r.zoneId === z.id && bFloors.some(f => f.id === r.floorId)).forEach(r => {
                   const count = safeNum(r.count);
                   const rNetto = count * safeNum(r.std);
                   zNettoArea += rNetto;
-                  
                   const floor = floors.find(f => f.id === r.floorId);
                   let globalMultiplier = 0;
-                  if (floor && floor.factorValues) {
-                      factors.filter(fac => !fac.zoneId).forEach(fac => {
-                          globalMultiplier += safeNum(floor.factorValues[fac.id]);
-                      });
-                  }
+                  if (floor && floor.factorValues) { factors.filter(fac => !fac.zoneId).forEach(fac => { globalMultiplier += safeNum(floor.factorValues[fac.id]); }); }
                   zBrutoArea += rNetto * (1 + globalMultiplier / 100);
                 });
-                
-                // 2. Tambahkan luasan penuh dari faktor yang spesifik menargetkan ke zona ini
-                bFloors.forEach(f => {
-                   factors.filter(fac => fac.zoneId === z.id).forEach(fac => {
-                      const val = safeNum(f.factorValues?.[fac.id]);
-                      const facArea = (f.netto * val) / 100;
-                      zBrutoArea += facArea;
-                   });
-                });
-
+                bFloors.forEach(f => { factors.filter(fac => fac.zoneId === z.id).forEach(fac => { zBrutoArea += (f.netto * safeNum(f.factorValues?.[fac.id])) / 100; }); });
                 return { id: z.id, name: z.label, area: zNettoArea, brutoArea: zBrutoArea, style: getZoneStyle(z.colorId) };
               });
 
@@ -418,141 +344,93 @@
             
             const zoneBreakdown = zones.map(z => {
               let nettoArea = 0; let brutoArea = 0;
-              
-              // 1. Luas dasar + faktor global
               rooms.filter(r => r.zoneId === z.id).forEach(r => {
                 const count = safeNum(r.count);
                 const rNetto = count * safeNum(r.std);
                 nettoArea += rNetto;
-                
                 const floor = floors.find(f => f.id === r.floorId);
                 let globalMultiplier = 0;
-                if (floor && floor.factorValues) { 
-                    factors.filter(fac => !fac.zoneId).forEach(fac => {
-                        globalMultiplier += safeNum(floor.factorValues[fac.id]);
-                    }); 
-                }
+                if (floor && floor.factorValues) { factors.filter(fac => !fac.zoneId).forEach(fac => { globalMultiplier += safeNum(floor.factorValues[fac.id]); }); }
                 brutoArea += rNetto * (1 + globalMultiplier / 100);
               });
-              
-              // 2. Tambahkan spesifik faktor target
-              floorDetails.forEach(f => {
-                 factors.filter(fac => fac.zoneId === z.id).forEach(fac => {
-                    const val = safeNum(f.factorValues?.[fac.id]);
-                    brutoArea += (f.netto * val) / 100;
-                 });
-              });
-
+              floorDetails.forEach(f => { factors.filter(fac => fac.zoneId === z.id).forEach(fac => { brutoArea += (f.netto * safeNum(f.factorValues?.[fac.id])) / 100; }); });
               return { id: z.id, name: z.label, area: nettoArea, brutoArea: brutoArea, style: getZoneStyle(z.colorId) };
             });
 
-            return { 
-              nettoTotal: globalNettoTotal, 
-              brutoTotal: globalBrutoTotal, 
-              footprint: globalFootprintArea,
-              basementFootprint: globalBasementFootprintArea,
-              floorDetails, 
-              buildingDetails,
-              zoneBreakdown,
-              currentKDB, currentKTB, currentKLB,
-              maxAllowedKLBArea, maxAllowedKDBArea, maxAllowedKTBArea, minRequiredKDHArea,
-              factorAreas: globalFactorAreas
-            };
-          }, [rooms, floors, buildings, zones, factors, landArea, ktbLimit, kdhLimit, klbLimit, kdbLimit]);
+            const parkingStats = {
+                totalArea: 0,
+                details: parkingRules.map(rule => {
+                    let baseValue = 0; let basisLabel = '';
+                    if (rule.basis === 'gfa') { baseValue = globalBrutoTotal; basisLabel = 'Total GFA Kawasan'; }
+                    else if (rule.basis === 'occupants') { baseValue = globalOccupantsTotal; basisLabel = 'Total Penghuni Kawasan'; }
+                    else if (rule.basis === 'zone') {
+                        if (rule.targetZoneIds && rule.targetZoneIds.length > 0) {
+                            let combinedArea = 0;
+                            let zoneNames = [];
+                            rule.targetZoneIds.forEach(zId => {
+                                const zStats = zoneBreakdown.find(z => z.id === zId);
+                                if (zStats) {
+                                    combinedArea += zStats.brutoArea;
+                                    zoneNames.push(zStats.name);
+                                }
+                            });
+                            baseValue = combinedArea;
+                            basisLabel = `Zona ${zoneNames.join(', ')}`;
+                        } else {
+                            baseValue = 0;
+                            basisLabel = 'Pilih Zona Target';
+                        }
+                    }
 
-          // ACTIONS
+                    const count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
+                    const area = count * rule.areaPerVehicle;
+                    return { ...rule, baseValue, basisLabel, count, area };
+                })
+            };
+            parkingStats.totalArea = parkingStats.details.reduce((sum, d) => sum + d.area, 0);
+            parkingStats.remainingSurfaceArea = lArea - globalFootprintArea;
+
+            return { 
+              nettoTotal: globalNettoTotal, brutoTotal: globalBrutoTotal, occupantsTotal: globalOccupantsTotal, footprint: globalFootprintArea, basementFootprint: globalBasementFootprintArea,
+              floorDetails, buildingDetails, zoneBreakdown, parkingStats, currentKDB, currentKTB, currentKLB, maxAllowedKLBArea, maxAllowedKDBArea, maxAllowedKTBArea, minRequiredKDHArea, factorAreas: globalFactorAreas
+            };
+          }, [rooms, floors, buildings, zones, factors, parkingRules, landArea, ktbLimit, kdhLimit, klbLimit, kdbLimit]);
+
           const handleNewProject = useCallback(() => {
-            showConfirm("Apakah Anda yakin ingin memulai proyek baru dari awal? Pastikan proyek saat ini sudah Anda 'Simpan' ke komputer agar tidak hilang.", () => {
-                setAppState(INITIAL_APP_STATE);
-                setActiveBuildingId(INITIAL_APP_STATE.buildings[0].id);
-                setCollapsedFloors({});
-                localStorage.removeItem('spacePlannerState');
-            }, "Buat Proyek Baru");
+            showConfirm("Mulai proyek baru? Pastikan sudah disimpan.", () => { setAppState(INITIAL_APP_STATE); setActiveBuildingId(INITIAL_APP_STATE.buildings[0].id); setCollapsedFloors({}); localStorage.removeItem('spacePlannerState'); }, "Buat Proyek Baru");
           }, [setAppState, showConfirm]);
 
           const addBuilding = () => {
-            const newId = `b${Date.now()}`;
-            const newFloorId = `f${Date.now()}`;
-            const initialFactors = {};
-            factors.forEach(fac => initialFactors[fac.id] = fac.defaultVal || 0);
-
-            setAppState(prev => ({
-              ...prev,
-              buildings: [...prev.buildings, { id: newId, name: `Gedung ${prev.buildings.length + 1}`, kdbFloorId: newFloorId, ktbFloorId: '', notes: '' }],
-              floors: [...prev.floors, { id: newFloorId, buildingId: newId, name: 'Lantai Dasar', isBasement: false, floorHeight: 4.0, factorValues: initialFactors }]
-            }));
+            const newId = `b${Date.now()}`; const newFloorId = `f${Date.now()}`; const initialFactors = {}; factors.forEach(fac => initialFactors[fac.id] = fac.defaultVal || 0);
+            setAppState(prev => ({ ...prev, buildings: [...prev.buildings, { id: newId, name: `Gedung ${prev.buildings.length + 1}`, kdbFloorId: newFloorId, ktbFloorId: '', notes: '' }], floors: [...prev.floors, { id: newFloorId, buildingId: newId, name: 'Lantai Dasar', isBasement: false, floorHeight: 4.0, factorValues: initialFactors }] }));
             setActiveBuildingId(newId);
           };
 
-          const updateBuilding = (id, field, value) => {
-            setAppState(prev => ({
-              ...prev,
-              buildings: prev.buildings.map(b => b.id === id ? { ...b, [field]: value } : b)
-            }));
-          };
-
+          const updateBuilding = (id, field, value) => setAppState(prev => ({ ...prev, buildings: prev.buildings.map(b => b.id === id ? { ...b, [field]: value } : b) }));
           const removeBuilding = (id) => {
-            if (buildings.length <= 1) {
-              showAlert("Proyek harus memiliki setidaknya 1 Gedung.", "Gagal Menghapus");
-              return;
-            }
-            showConfirm("Hapus gedung beserta seluruh lantai dan ruangannya?", () => {
+            if (buildings.length <= 1) { showAlert("Min. 1 Gedung.", "Gagal Menghapus"); return; }
+            showConfirm("Hapus gedung beserta seluruh isinya?", () => {
               setAppState(prev => {
-                const remainingFloors = prev.floors.filter(f => f.buildingId !== id);
-                const validFloorIds = remainingFloors.map(f => f.id);
-                return {
-                  ...prev,
-                  buildings: prev.buildings.filter(b => b.id !== id),
-                  floors: remainingFloors,
-                  rooms: prev.rooms.filter(r => validFloorIds.includes(r.floorId))
-                }
+                const remainingFloors = prev.floors.filter(f => f.buildingId !== id); const validFloorIds = remainingFloors.map(f => f.id);
+                return { ...prev, buildings: prev.buildings.filter(b => b.id !== id), floors: remainingFloors, rooms: prev.rooms.filter(r => validFloorIds.includes(r.floorId)) }
               });
-            }, "Hapus Gedung");
+            });
           };
 
           const addFactor = () => {
             const newId = `fac${Date.now()}`;
-            setAppState(prev => ({
-              ...prev,
-              factors: [...prev.factors, { id: newId, label: 'Faktor Baru', defaultVal: 0, zoneId: '' }],
-              floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [newId]: 0 } }))
-            }));
+            setAppState(prev => ({ ...prev, factors: [...prev.factors, { id: newId, label: 'Faktor Baru', defaultVal: 0, zoneId: '' }], floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [newId]: 0 } })) }));
           };
-
           const removeFactor = (id) => setFactors(prev => prev.filter(fac => fac.id !== id));
-          
-          const updateFactor = (id, field, value) => {
-              setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, [field]: value } : fac));
-          };
-          
-          const updateFactorDefault = (id, defaultVal) => {
-            setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, defaultVal: Number(defaultVal) } : fac));
-          };
-
+          const updateFactor = (id, field, value) => setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, [field]: value } : fac));
+          const updateFactorDefault = (id, defaultVal) => setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, defaultVal: Number(defaultVal) } : fac));
           const applyFactorToAllFloors = (factorId) => {
-            const factor = factors.find(f => f.id === factorId);
-            if (!factor) return;
-            const val = factor.defaultVal;
-            showConfirm(`Terapkan nilai persentase ${val}% untuk "${factor.label}" ke SEMUA lantai di SEMUA gedung? (Nilai manual sebelumnya akan tertimpa).`, () => {
-              setAppState(prev => ({
-                ...prev,
-                floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [factorId]: val } }))
-              }));
-            }, "Terapkan Global");
+            const factor = factors.find(f => f.id === factorId); if (!factor) return;
+            showConfirm(`Terapkan ${factor.defaultVal}% ke SEMUA lantai?`, () => { setAppState(prev => ({ ...prev, floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [factorId]: factor.defaultVal } })) })); });
           };
+          const updateFloorFactor = (floorId, factorId, value) => setAppState(prev => ({ ...prev, floors: prev.floors.map(f => f.id === floorId ? { ...f, factorValues: { ...f.factorValues, [factorId]: value } } : f) }));
 
-          const updateFloorFactor = (floorId, factorId, value) => {
-            setAppState(prev => ({
-              ...prev,
-              floors: prev.floors.map(f => f.id === floorId ? { ...f, factorValues: { ...f.factorValues, [factorId]: value } } : f)
-            }));
-          };
-
-          const addZone = () => {
-            const newId = `z${Date.now()}`;
-            setZones(prev => [...prev, { id: newId, label: 'Zona Baru', colorId: 'slate' }]);
-          };
-
+          const addZone = () => { const newId = `z${Date.now()}`; setZones(prev => [...prev, { id: newId, label: 'Zona Baru', colorId: 'slate' }]); };
           const removeZone = (id) => {
             if (zones.length <= 1) return;
             setAppState(prev => {
@@ -560,88 +438,51 @@
               return { 
                   ...prev, 
                   zones: newZones, 
-                  factors: prev.factors.map(f => f.zoneId === id ? { ...f, zoneId: '' } : f),
+                  factors: prev.factors.map(f => f.zoneId === id ? { ...f, zoneId: '' } : f), 
+                  parkingRules: prev.parkingRules.map(pr => ({ ...pr, targetZoneIds: (pr.targetZoneIds || []).filter(zId => zId !== id) })), 
                   rooms: prev.rooms.map(r => r.zoneId === id ? { ...r, zoneId: newZones[0].id } : r) 
               };
             });
           };
-
           const updateZone = (id, field, value) => setZones(prev => prev.map(z => z.id === id ? { ...z, [field]: value } : z));
 
-          const addFloor = useCallback((position = 'bottom') => {
-            if(!activeBuildingId) return;
-            const bFloors = floors.filter(f => f.buildingId === activeBuildingId);
-            if (bFloors.length >= (Number(maxFloorsLimit) || 1)) return;
+          // Parking Actions
+          const addParkingRule = () => { const newId = `pr${Date.now()}`; setParkingRules(prev => [...prev, { id: newId, name: 'Aturan Baru', vehicleType: 'Mobil', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25 }]); };
+          const updateParkingRule = (id, field, value) => setParkingRules(prev => prev.map(pr => pr.id === id ? { ...pr, [field]: value } : pr));
+          const removeParkingRule = (id) => setParkingRules(prev => prev.filter(pr => pr.id !== id));
 
-            const newId = `f${Date.now()}`;
-            const initialFactors = {};
-            factors.forEach(fac => initialFactors[fac.id] = fac.defaultVal || 0);
-            
+          const addFloor = useCallback((position = 'bottom') => {
+            if(!activeBuildingId) return; const bFloors = floors.filter(f => f.buildingId === activeBuildingId); if (bFloors.length >= (Number(maxFloorsLimit) || 1)) return;
+            const newId = `f${Date.now()}`; const initialFactors = {}; factors.forEach(fac => initialFactors[fac.id] = fac.defaultVal || 0);
             setAppState(prev => {
-              let maxLantai = 0;
-              prev.floors.filter(f => f.buildingId === activeBuildingId).forEach(f => {
-                const match = f.name.match(/^Lantai\s(\d+)$/i);
-                if (match) {
-                  const num = parseInt(match[1], 10);
-                  if (num > maxLantai) maxLantai = num;
-                }
-              });
-              
+              let maxLantai = 0; prev.floors.filter(f => f.buildingId === activeBuildingId).forEach(f => { const match = f.name.match(/^Lantai\s(\d+)$/i); if (match) maxLantai = Math.max(maxLantai, parseInt(match[1], 10)); });
               const newFloor = { id: newId, buildingId: activeBuildingId, name: `Lantai ${maxLantai + 1}`, isBasement: false, floorHeight: 4.0, factorValues: initialFactors };
               const newFloors = [...prev.floors];
-              
-              if (position === 'top') {
-                const firstIdx = newFloors.findIndex(f => f.buildingId === activeBuildingId);
-                newFloors.splice(firstIdx >= 0 ? firstIdx : 0, 0, newFloor);
-              } else {
-                newFloors.push(newFloor);
-              }
+              if (position === 'top') { const firstIdx = newFloors.findIndex(f => f.buildingId === activeBuildingId); newFloors.splice(firstIdx >= 0 ? firstIdx : 0, 0, newFloor); } else { newFloors.push(newFloor); }
               return { ...prev, floors: newFloors };
             });
           }, [floors, maxFloorsLimit, factors, activeBuildingId, setAppState]);
 
           const removeFloor = (id) => {
-            const floor = floors.find(f => f.id === id);
-            const bFloors = floors.filter(f => f.buildingId === floor.buildingId);
-            if (bFloors.length <= 1) { showAlert("Gedung harus memiliki setidaknya 1 Lantai.", "Gagal Menghapus"); return; }
-            
+            const floor = floors.find(f => f.id === id); const bFloors = floors.filter(f => f.buildingId === floor.buildingId);
+            if (bFloors.length <= 1) { showAlert("Min. 1 Lantai."); return; }
             setAppState(prev => {
               const newFloors = prev.floors.filter(f => f.id !== id);
-              return {
-                ...prev,
-                floors: newFloors,
-                rooms: prev.rooms.filter(r => r.floorId !== id),
-                buildings: prev.buildings.map(b => {
-                   if(b.id === floor.buildingId) {
-                      return {
-                         ...b,
-                         kdbFloorId: b.kdbFloorId === id ? newFloors.find(f=>f.buildingId===b.id)?.id : b.kdbFloorId,
-                         ktbFloorId: b.ktbFloorId === id ? '' : b.ktbFloorId
-                      }
-                   }
-                   return b;
-                })
-              };
+              return { ...prev, floors: newFloors, rooms: prev.rooms.filter(r => r.floorId !== id), buildings: prev.buildings.map(b => { if(b.id === floor.buildingId) { return { ...b, kdbFloorId: b.kdbFloorId === id ? newFloors.find(f=>f.buildingId===b.id)?.id : b.kdbFloorId, ktbFloorId: b.ktbFloorId === id ? '' : b.ktbFloorId } } return b; }) };
             });
           };
 
           const updateFloorConfig = (id, field, value) => {
-            setAppState(prev => ({
-              ...prev,
-              floors: prev.floors.map(f => {
+            setAppState(prev => ({ ...prev, floors: prev.floors.map(f => {
                 if (f.id === id) {
                   const updatedFloor = { ...f, [field]: value };
                   if (field === 'name') {
                     const lowerName = String(value).toLowerCase();
-                    if (lowerName.includes('basement') || lowerName.includes('bawah') || lowerName.includes('lower')) {
-                      updatedFloor.isBasement = true;
-                    } else if (lowerName.includes('lantai') || lowerName.includes('dasar') || lowerName.includes('atap')) {
-                      updatedFloor.isBasement = false;
-                    }
+                    if (lowerName.includes('basement') || lowerName.includes('bawah')) updatedFloor.isBasement = true;
+                    else if (lowerName.includes('lantai') || lowerName.includes('dasar')) updatedFloor.isBasement = false;
                   }
                   if (field === 'floorHeight') {
-                    if (Number(value) < 0) updatedFloor.isBasement = true;
-                    else if (Number(value) > 0 && updatedFloor.name.includes('Lantai')) updatedFloor.isBasement = false;
+                    if (Number(value) < 0) updatedFloor.isBasement = true; else if (Number(value) > 0 && updatedFloor.name.includes('Lantai')) updatedFloor.isBasement = false;
                   }
                   return updatedFloor;
                 }
@@ -651,156 +492,66 @@
           };
 
           const confirmDuplicate = () => {
-            const { floorId, count } = duplicateModal;
-            if (!floorId || count < 1) return;
-
+            const { floorId, count } = duplicateModal; if (!floorId || count < 1) return;
             setAppState(prev => {
-              const floorToCopy = prev.floors.find(f => f.id === floorId);
-              if (!floorToCopy) return prev;
-
+              const floorToCopy = prev.floors.find(f => f.id === floorId); if (!floorToCopy) return prev;
               const bFloors = prev.floors.filter(f => f.buildingId === floorToCopy.buildingId);
-              const maxAllowed = (Number(prev.maxFloorsLimit) || 1) - bFloors.length;
-              const actualCount = Math.min(count, maxAllowed);
-              
-              if (actualCount <= 0) return prev;
-
-              const newFloorsToAdd = [];
-              const newRoomsToAdd = [];
-              let isStandardName = /^Lantai\s\d+$/i.test(floorToCopy.name.trim());
-              let maxLantai = 0;
-              
-              if (isStandardName) {
-                bFloors.forEach(f => {
-                  const match = f.name.match(/^Lantai\s(\d+)$/i);
-                  if (match) { const num = parseInt(match[1], 10); if (num > maxLantai) maxLantai = num; }
-                });
-              }
-
+              const actualCount = Math.min(count, (Number(prev.maxFloorsLimit) || 1) - bFloors.length); if (actualCount <= 0) return prev;
+              const newFloorsToAdd = []; const newRoomsToAdd = [];
+              let isStandardName = /^Lantai\s\d+$/i.test(floorToCopy.name.trim()); let maxLantai = 0;
+              if (isStandardName) { bFloors.forEach(f => { const match = f.name.match(/^Lantai\s(\d+)$/i); if (match) { const num = parseInt(match[1], 10); if (num > maxLantai) maxLantai = num; } }); }
               const roomsToCopy = prev.rooms.filter(r => r.floorId === floorId);
-
               for (let i = 0; i < actualCount; i++) {
-                const newFloorId = `f${Date.now()}_${i}`; 
-                let nextFloorName = `${floorToCopy.name} (Copy ${i + 1})`;
-                if (isStandardName) nextFloorName = `Lantai ${maxLantai + 1 + i}`;
-
-                newFloorsToAdd.push({ ...floorToCopy, id: newFloorId, name: nextFloorName });
-                const copiedRooms = roomsToCopy.map(r => ({ ...r, id: Math.random().toString(36).substr(2, 9), floorId: newFloorId }));
-                newRoomsToAdd.push(...copiedRooms);
+                const newFloorId = `f${Date.now()}_${i}`; let nextFloorName = `${floorToCopy.name} (Copy ${i + 1})`; if (isStandardName) nextFloorName = `Lantai ${maxLantai + 1 + i}`;
+                newFloorsToAdd.push({ ...floorToCopy, id: newFloorId, name: nextFloorName }); newRoomsToAdd.push(...roomsToCopy.map(r => ({ ...r, id: Math.random().toString(36).substr(2, 9), floorId: newFloorId })));
               }
-
-              const floorIndex = prev.floors.findIndex(f => f.id === floorId);
-              const newFloors = [...prev.floors];
-              newFloors.splice(floorIndex + 1, 0, ...newFloorsToAdd);
-
+              const floorIndex = prev.floors.findIndex(f => f.id === floorId); const newFloors = [...prev.floors]; newFloors.splice(floorIndex + 1, 0, ...newFloorsToAdd);
               return { ...prev, floors: newFloors, rooms: [...prev.rooms, ...newRoomsToAdd] };
             });
             setDuplicateModal({ isOpen: false, floorId: null, count: 1 });
           };
 
           const confirmDuplicateBuilding = () => {
-            const { buildingId, count } = duplicateBuildingModal;
-            if (!buildingId || count < 1) return;
-
+            const { buildingId, count } = duplicateBuildingModal; if (!buildingId || count < 1) return;
             setAppState(prev => {
-              const bToCopy = prev.buildings.find(b => b.id === buildingId);
-              if (!bToCopy) return prev;
-
-              const newBuildings = [];
-              const newFloors = [];
-              const newRooms = [];
-
-              const bFloors = prev.floors.filter(f => f.buildingId === buildingId);
-              const bRooms = prev.rooms.filter(r => bFloors.some(f => f.id === r.floorId));
-
+              const bToCopy = prev.buildings.find(b => b.id === buildingId); if (!bToCopy) return prev;
+              const newBuildings = []; const newFloors = []; const newRooms = [];
+              const bFloors = prev.floors.filter(f => f.buildingId === buildingId); const bRooms = prev.rooms.filter(r => bFloors.some(f => f.id === r.floorId));
               for (let i = 0; i < count; i++) {
-                const newBId = `b${Date.now()}_${i}`;
-                const floorIdMap = {}; 
-
-                const copiedFloors = bFloors.map(f => {
-                  const newFId = `f${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                  floorIdMap[f.id] = newFId;
-                  return { ...f, id: newFId, buildingId: newBId };
-                });
-
-                const copiedRooms = bRooms.map(r => ({
-                  ...r,
-                  id: Math.random().toString(36).substr(2, 9),
-                  floorId: floorIdMap[r.floorId]
-                }));
-
-                newBuildings.push({
-                  ...bToCopy,
-                  id: newBId,
-                  name: `${bToCopy.name} (Copy ${i + 1})`,
-                  kdbFloorId: bToCopy.kdbFloorId ? floorIdMap[bToCopy.kdbFloorId] : '',
-                  ktbFloorId: bToCopy.ktbFloorId ? floorIdMap[bToCopy.ktbFloorId] : ''
-                });
-
-                newFloors.push(...copiedFloors);
-                newRooms.push(...copiedRooms);
+                const newBId = `b${Date.now()}_${i}`; const floorIdMap = {}; 
+                const copiedFloors = bFloors.map(f => { const newFId = `f${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; floorIdMap[f.id] = newFId; return { ...f, id: newFId, buildingId: newBId }; });
+                const copiedRooms = bRooms.map(r => ({ ...r, id: Math.random().toString(36).substr(2, 9), floorId: floorIdMap[r.floorId] }));
+                newBuildings.push({ ...bToCopy, id: newBId, name: `${bToCopy.name} (Copy ${i + 1})`, kdbFloorId: bToCopy.kdbFloorId ? floorIdMap[bToCopy.kdbFloorId] : '', ktbFloorId: bToCopy.ktbFloorId ? floorIdMap[bToCopy.ktbFloorId] : '' });
+                newFloors.push(...copiedFloors); newRooms.push(...copiedRooms);
               }
-
-              return {
-                ...prev,
-                buildings: [...prev.buildings, ...newBuildings],
-                floors: [...prev.floors, ...newFloors],
-                rooms: [...prev.rooms, ...newRooms]
-              };
+              return { ...prev, buildings: [...prev.buildings, ...newBuildings], floors: [...prev.floors, ...newFloors], rooms: [...prev.rooms, ...newRooms] };
             });
             setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 });
           };
 
           const addRoom = useCallback((fId) => {
             const newRoomId = Math.random().toString(36).substr(2, 9);
-            setAppState(prev => ({
-               ...prev,
-               rooms: [...prev.rooms, { id: newRoomId, label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '', occupants: '' }]
-            }));
-            setCollapsedFloors(prev => ({ ...prev, [fId]: false }));
-            setFocusRoomId(newRoomId);
+            setAppState(prev => ({ ...prev, rooms: [...prev.rooms, { id: newRoomId, label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '', occupants: '' }] }));
+            setCollapsedFloors(prev => ({ ...prev, [fId]: false })); setFocusRoomId(newRoomId);
           }, [setAppState]);
 
-          const updateRoom = (id, field, value) => {
-            setAppState(prev => ({ ...prev, rooms: prev.rooms.map(r => r.id === id ? { ...r, [field]: value } : r) }));
-          };
+          const updateRoom = (id, field, value) => { setAppState(prev => ({ ...prev, rooms: prev.rooms.map(r => r.id === id ? { ...r, [field]: value } : r) })); };
+          const removeRoom = (id) => { setAppState(prev => ({ ...prev, rooms: prev.rooms.filter(r => r.id !== id) })); setSelectedRoomIds(prev => prev.filter(selectedId => selectedId !== id)); };
 
-          const removeRoom = (id) => {
-            setAppState(prev => ({ ...prev, rooms: prev.rooms.filter(r => r.id !== id) }));
-            setSelectedRoomIds(prev => prev.filter(selectedId => selectedId !== id));
-          };
-
-          // SISTEM BULK ACTION (Seleksi Banyak Ruang)
-          const toggleRoomSelection = (roomId) => {
-              setSelectedRoomIds(prev => prev.includes(roomId) ? prev.filter(id => id !== roomId) : [...prev, roomId]);
-          };
-
+          const toggleRoomSelection = (roomId) => setSelectedRoomIds(prev => prev.includes(roomId) ? prev.filter(id => id !== roomId) : [...prev, roomId]);
           const toggleAllRoomsInFloor = (floorId, floorRoomIds) => {
               const allSelected = floorRoomIds.length > 0 && floorRoomIds.every(id => selectedRoomIds.includes(id));
-              if (allSelected) {
-                  setSelectedRoomIds(prev => prev.filter(id => !floorRoomIds.includes(id)));
-              } else {
-                  setSelectedRoomIds(prev => [...new Set([...prev, ...floorRoomIds])]);
-              }
+              if (allSelected) setSelectedRoomIds(prev => prev.filter(id => !floorRoomIds.includes(id))); else setSelectedRoomIds(prev => [...new Set([...prev, ...floorRoomIds])]);
           };
-
           const confirmMoveRooms = () => {
               if (!moveModal.targetFloorId || selectedRoomIds.length === 0) return;
-              setAppState(prev => ({
-                  ...prev,
-                  rooms: prev.rooms.map(r => selectedRoomIds.includes(r.id) ? { ...r, floorId: moveModal.targetFloorId } : r)
-              }));
-              setSelectedRoomIds([]);
-              setMoveModal({ isOpen: false, targetFloorId: '' });
+              setAppState(prev => ({ ...prev, rooms: prev.rooms.map(r => selectedRoomIds.includes(r.id) ? { ...r, floorId: moveModal.targetFloorId } : r) }));
+              setSelectedRoomIds([]); setMoveModal({ isOpen: false, targetFloorId: '' });
           };
-
           const bulkDeleteRooms = (floorId) => {
-              const idsToDelete = selectedRoomIds.filter(id => rooms.find(r => r.id === id)?.floorId === floorId);
-              if (idsToDelete.length === 0) return;
+              const idsToDelete = selectedRoomIds.filter(id => rooms.find(r => r.id === id)?.floorId === floorId); if (idsToDelete.length === 0) return;
               showConfirm(`Hapus ${idsToDelete.length} ruangan yang dipilih secara permanen?`, () => {
-                  setAppState(prev => ({
-                      ...prev,
-                      rooms: prev.rooms.filter(r => !idsToDelete.includes(r.id))
-                  }));
+                  setAppState(prev => ({ ...prev, rooms: prev.rooms.filter(r => !idsToDelete.includes(r.id)) }));
                   setSelectedRoomIds(prev => prev.filter(id => !idsToDelete.includes(id)));
               }, "Hapus Banyak Ruangan");
           };
@@ -811,118 +562,54 @@
               if (sortBy === 'name') floorRooms.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
               else if (sortBy === 'zone') {
                 floorRooms.sort((a, b) => {
-                  const zoneA = prev.zones.find(z => z.id === a.zoneId)?.label || '';
-                  const zoneB = prev.zones.find(z => z.id === b.zoneId)?.label || '';
-                  if (zoneA === zoneB) return (a.label || '').localeCompare(b.label || '');
-                  return zoneA.localeCompare(zoneB);
+                  const zoneA = prev.zones.find(z => z.id === a.zoneId)?.label || ''; const zoneB = prev.zones.find(z => z.id === b.zoneId)?.label || '';
+                  if (zoneA === zoneB) return (a.label || '').localeCompare(b.label || ''); return zoneA.localeCompare(zoneB);
                 });
               }
-
               const oldFloorRooms = prev.rooms.filter(r => r.floorId === floorId);
-              const isUnchanged = floorRooms.every((r, idx) => r.id === oldFloorRooms[idx].id);
-              if (isUnchanged) floorRooms.reverse();
-
-              const newRooms = [...prev.rooms];
-              let floorRoomIndex = 0;
-              for (let i = 0; i < newRooms.length; i++) {
-                if (newRooms[i].floorId === floorId) { newRooms[i] = floorRooms[floorRoomIndex]; floorRoomIndex++; }
-              }
+              if (floorRooms.every((r, idx) => r.id === oldFloorRooms[idx].id)) floorRooms.reverse();
+              const newRooms = [...prev.rooms]; let floorRoomIndex = 0;
+              for (let i = 0; i < newRooms.length; i++) { if (newRooms[i].floorId === floorId) { newRooms[i] = floorRooms[floorRoomIndex]; floorRoomIndex++; } }
               return { ...prev, rooms: newRooms };
             });
           }, [setAppState]);
 
-          const toggleFloorCollapse = (floorId) => {
-            setCollapsedFloors(prev => ({ ...prev, [floorId]: !prev[floorId] }));
-          };
-
-          const handleDragStart = (e, idx) => {
-            setDraggedFloorIdx(idx);
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', idx);
-          };
-
-          const handleDragOver = (e, idx) => {
-            e.preventDefault(); 
-            e.dataTransfer.dropEffect = 'move';
-            if (dragOverFloorIdx !== idx) setDragOverFloorIdx(idx);
-          };
-
+          const toggleFloorCollapse = (floorId) => setCollapsedFloors(prev => ({ ...prev, [floorId]: !prev[floorId] }));
+          const handleDragStart = (e, idx) => { setDraggedFloorIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', idx); };
+          const handleDragOver = (e, idx) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverFloorIdx !== idx) setDragOverFloorIdx(idx); };
           const handleDrop = (e, targetIdx) => {
             e.preventDefault();
             if (draggedFloorIdx !== null && draggedFloorIdx !== targetIdx) {
               setAppState(prev => {
-                const newFloors = [...prev.floors];
-                const bFloors = newFloors.filter(f => f.buildingId === activeBuildingId);
-                const otherFloors = newFloors.filter(f => f.buildingId !== activeBuildingId);
-
-                const [movedFloor] = bFloors.splice(draggedFloorIdx, 1);
-                bFloors.splice(targetIdx, 0, movedFloor);
-                
-                let standardCounter = 1;
-                const reorderedBFloors = bFloors.map((floor) => {
-                  if (/^Lantai\s\d+$/i.test(floor.name.trim())) {
-                    const newName = `Lantai ${standardCounter}`;
-                    standardCounter++;
-                    return { ...floor, name: newName };
-                  }
-                  return floor;
-                });
-
+                const newFloors = [...prev.floors]; const bFloors = newFloors.filter(f => f.buildingId === activeBuildingId); const otherFloors = newFloors.filter(f => f.buildingId !== activeBuildingId);
+                const [movedFloor] = bFloors.splice(draggedFloorIdx, 1); bFloors.splice(targetIdx, 0, movedFloor);
+                let standardCounter = 1; const reorderedBFloors = bFloors.map((floor) => /^Lantai\s(\d+)$/i.test(floor.name.trim()) ? { ...floor, name: `Lantai ${standardCounter++}` } : floor);
                 return { ...prev, floors: [...otherFloors, ...reorderedBFloors] };
               });
             }
-            setDraggedFloorIdx(null);
-            setDragOverFloorIdx(null);
+            setDraggedFloorIdx(null); setDragOverFloorIdx(null);
           };
+          const handleDragEnd = () => { setDraggedFloorIdx(null); setDragOverFloorIdx(null); };
 
-          const handleDragEnd = () => {
-            setDraggedFloorIdx(null);
-            setDragOverFloorIdx(null);
-          };
-
-          const handleBuildingDragStart = (e, idx) => {
-            setDraggedBuildingIdx(idx);
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', idx);
-          };
-
-          const handleBuildingDragOver = (e, idx) => {
-            e.preventDefault(); 
-            e.dataTransfer.dropEffect = 'move';
-            if (dragOverBuildingIdx !== idx) setDragOverBuildingIdx(idx);
-          };
-
+          const handleBuildingDragStart = (e, idx) => { setDraggedBuildingIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', idx); };
+          const handleBuildingDragOver = (e, idx) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverBuildingIdx !== idx) setDragOverBuildingIdx(idx); };
           const handleBuildingDrop = (e, targetIdx) => {
             e.preventDefault();
             if (draggedBuildingIdx !== null && draggedBuildingIdx !== targetIdx) {
               setAppState(prev => {
-                const newBuildings = [...prev.buildings];
-                const [movedBuilding] = newBuildings.splice(draggedBuildingIdx, 1);
-                newBuildings.splice(targetIdx, 0, movedBuilding);
-                return { ...prev, buildings: newBuildings };
+                const newBuildings = [...prev.buildings]; const [movedBuilding] = newBuildings.splice(draggedBuildingIdx, 1); newBuildings.splice(targetIdx, 0, movedBuilding); return { ...prev, buildings: newBuildings };
               });
             }
-            setDraggedBuildingIdx(null);
-            setDragOverBuildingIdx(null);
+            setDraggedBuildingIdx(null); setDragOverBuildingIdx(null);
           };
+          const handleBuildingDragEnd = () => { setDraggedBuildingIdx(null); setDragOverBuildingIdx(null); };
 
-          const handleBuildingDragEnd = () => {
-            setDraggedBuildingIdx(null);
-            setDragOverBuildingIdx(null);
-          };
-
-          const handleRoomKeyDown = (e, floorId) => {
-            if (e.key === 'Enter') { e.preventDefault(); addRoom(floorId); }
-          };
+          const handleRoomKeyDown = (e, floorId) => { if (e.key === 'Enter') { e.preventDefault(); addRoom(floorId); } };
 
           useEffect(() => {
             const handleKeyDown = (e) => {
               if (e.ctrlKey || e.metaKey) {
-                if (e.key.toLowerCase() === 'z') {
-                  e.preventDefault(); 
-                  if (e.shiftKey) redo(); else undo();
-                  return;
-                }
+                if (e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
                 if (e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
               }
               if (activeTab !== 'input') return;
@@ -938,36 +625,21 @@
             const dataStr = JSON.stringify(appState, null, 2);
             const defaultFileName = `${(projectName || 'Proyek_Tanpa_Nama').replace(/\s+/g, '_')}.json`;
             const fallbackDownload = () => {
-              const blob = new Blob([dataStr], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement("a");
-              link.href = url; link.download = defaultFileName; document.body.appendChild(link); link.click();
-              document.body.removeChild(link); URL.revokeObjectURL(url);
+              const blob = new Blob([dataStr], { type: "application/json" }); const url = URL.createObjectURL(blob);
+              const link = document.createElement("a"); link.href = url; link.download = defaultFileName; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
               showAlert("File proyek telah diunduh otomatis.", "Informasi Unduhan");
             };
-
             try {
               if (window.showSaveFilePicker) {
-                const fileHandle = await window.showSaveFilePicker({ 
-                    suggestedName: defaultFileName, 
-                    types: [{ description: 'File Proyek (.json)', accept: { 'application/json': ['.json'] } }] 
-                });
-                const writable = await fileHandle.createWritable();
-                await writable.write(dataStr); 
-                await writable.close();
-                showAlert("Proyek berhasil disimpan di lokasi yang Anda pilih.", "Berhasil Disimpan");
-              } else {
-                fallbackDownload();
-              }
-            } catch (error) { 
-              if (error.name !== 'AbortError') fallbackDownload(); 
-            }
+                const fileHandle = await window.showSaveFilePicker({ suggestedName: defaultFileName, types: [{ description: 'File Proyek (.json)', accept: { 'application/json': ['.json'] } }] });
+                const writable = await fileHandle.createWritable(); await writable.write(dataStr); await writable.close();
+                showAlert("Proyek berhasil disimpan.", "Berhasil Disimpan");
+              } else { fallbackDownload(); }
+            } catch (error) { if (error.name !== 'AbortError') fallbackDownload(); }
           }, [appState, projectName, showAlert]);
 
           const handleLoadProject = useCallback((e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
+            const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = (event) => {
               try {
                 let loadedState = JSON.parse(event.target.result);
@@ -977,33 +649,23 @@
                    if(loadedState.floors) loadedState.floors = loadedState.floors.map(f => ({...f, buildingId: defBId}));
                 }
                 if (loadedState && loadedState.floors && loadedState.rooms && loadedState.factors && loadedState.buildings) {
-                  setAppState(loadedState);
-                  setActiveBuildingId(loadedState.buildings[0].id);
-                } else showAlert("Gagal memuat: File tidak valid atau struktur data korup.", "Error");
-              } catch (err) { showAlert("Gagal memuat: Format file harus berupa JSON yang valid.", "Error"); }
+                  if(!loadedState.parkingRules) loadedState.parkingRules = INITIAL_APP_STATE.parkingRules;
+                  setAppState(loadedState); setActiveBuildingId(loadedState.buildings[0].id);
+                } else showAlert("Gagal memuat: File tidak valid.", "Error");
+              } catch (err) { showAlert("Gagal memuat: Format JSON salah.", "Error"); }
             };
-            reader.readAsText(file);
-            e.target.value = null;
+            reader.readAsText(file); e.target.value = null;
           }, [setAppState, showAlert]);
 
           const handleEnhanceBuildingNote = async (buildingId, buildingName, currentNote) => {
               setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: true }));
               try {
-                  const systemInstruction = "Anda adalah asisten perencana ruang (space planner) profesional. Sempurnakan catatan/spesifikasi gedung ini agar lebih baku, profesional, dan jelas dalam Bahasa Indonesia.";
-                  const promptText = currentNote && currentNote.trim() !== ''
-                      ? `Perbaiki dan susun ulang catatan gedung ini menjadi 1-2 kalimat profesional:\n\nNama Gedung: ${buildingName}\nCatatan Awal: ${currentNote}`
-                      : `Berikan contoh 1 kalimat catatan/spesifikasi umum yang relevan untuk gedung bernama "${buildingName}".`;
-
+                  const systemInstruction = "Asisten perencana ruang profesional. Sempurnakan catatan spesifikasi gedung menjadi baku dan profesional dalam Bahasa Indonesia.";
+                  const promptText = currentNote && currentNote.trim() !== '' ? `Perbaiki 1 kalimat catatan gedung ini:\nGedung: ${buildingName}\nCatatan Awal: ${currentNote}` : `Berikan 1 contoh kalimat catatan spesifikasi gedung untuk: ${buildingName}.`;
                   const enhancedNote = await callGeminiAPI(systemInstruction, promptText);
-                  if (enhancedNote) {
-                      updateBuilding(buildingId, 'notes', enhancedNote.replace(/["*]/g, '').trim());
-                  }
-              } catch (error) {
-                  console.error("AI Enhance Note Error:", error);
-                  showAlert("Gagal memproses catatan dengan AI. Pastikan koneksi internet lancar.", "AI Error");
-              } finally {
-                  setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: false }));
-              }
+                  if (enhancedNote) updateBuilding(buildingId, 'notes', enhancedNote.replace(/["*]/g, '').trim());
+              } catch (error) { showAlert("Gagal memproses dengan AI. Pastikan internet lancar.", "AI Error"); } 
+              finally { setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: false })); }
           };
 
           const handlePrintPDF = useCallback(() => {
@@ -1012,19 +674,14 @@
               const element = document.getElementById('printable-report');
               if (!element) { setIsPrinting(false); return; }
               const opt = {
-                margin: [10, 10, 10, 10], filename: `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}.pdf`,
+                margin: 10, filename: `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}.pdf`,
                 image: { type: 'jpeg', quality: 1.0 }, html2canvas: { scale: 3, useCORS: true, scrollY: 0, letterRendering: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
               };
               window.html2pdf().set(opt).from(element).save().then(() => setIsPrinting(false));
             };
-
-            if (window.html2pdf) {
-              generatePDF();
-            } else {
-              const script = document.createElement('script');
-              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-              script.onload = generatePDF;
-              script.onerror = () => { setIsPrinting(false); showAlert("Gagal memuat modul PDF.", "Error"); };
+            if (window.html2pdf) generatePDF(); else {
+              const script = document.createElement('script'); script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+              script.onload = generatePDF; script.onerror = () => { setIsPrinting(false); showAlert("Gagal memuat modul PDF.", "Error"); };
               document.body.appendChild(script);
             }
           }, [projectName, showAlert]);
@@ -1042,43 +699,45 @@
                 const styleTitle = { font: { bold: true, sz: 14 } }; const styleSubtitle = { font: { bold: true, sz: 11 } }; const styleBold = { font: { bold: true } }; const emptyBorder = { border: borderAll };
                 const c = (v, s) => ({ v: v !== undefined && v !== null ? v : "", t: typeof v === 'number' ? 'n' : 's', s });
 
-                wsData.push([c("LAPORAN PROGRAM RUANG DAN INTENSITAS LAHAN", styleTitle)]);
-                wsData.push([]);
+                wsData.push([c("LAPORAN PROGRAM RUANG, INTENSITAS LAHAN, & PARKIR", styleTitle)]); wsData.push([]);
                 wsData.push([c("INFORMASI PROYEK", styleSubtitle)]);
                 wsData.push([c("Nama Proyek", styleBold), c(projectName || '-')]);
-                wsData.push([c("Lokasi", styleBold), c(projectLocation || '-')]);
-                wsData.push([]);
+                wsData.push([c("Lokasi", styleBold), c(projectLocation || '-')]); wsData.push([]);
 
                 wsData.push([c("PERHITUNGAN INTENSITAS LAHAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
                 wsData.push([c("Luas Lahan", styleDataText), c(Number(landArea), styleDataNumber), c("m²", styleDataNumber)]);
                 wsData.push([c(`KDB (Maks. ${kdbLimit}%)`, styleDataText), c(Number(stats.currentKDB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
                 wsData.push([c(`KTB (Maks. ${ktbLimit}%)`, styleDataText), c(Number(stats.currentKTB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
                 wsData.push([c(`KDH (Min. ${kdhLimit}%)`, styleDataText), c(Number(stats.minRequiredKDHArea.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
-                wsData.push([c(`KLB (Maks. ${klbLimit})`, styleDataText), c(Number(stats.currentKLB.toFixed(2)), styleDataNumber), c("", styleDataNumber)]);
-                wsData.push([]);
+                wsData.push([c(`KLB (Maks. ${klbLimit})`, styleDataText), c(Number(stats.currentKLB.toFixed(2)), styleDataNumber), c("", styleDataNumber)]); wsData.push([]);
 
-                wsData.push([c("LUAS BANGUNAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
+                wsData.push([c("LUAS BANGUNAN & PENGHUNI", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
                 wsData.push([c("Total Luas Netto", styleDataText), c(Number(stats.nettoTotal.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
                 wsData.push([c("Add. Factors (Akumulasi)", styleDataText), c(Number(Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
                 wsData.push([c("TOTAL GFA", { ...styleDataText, font: { bold: true } }), c(Number(stats.brutoTotal.toFixed(2)), styleDataNumberBold), c("m²", styleDataNumberBold)]);
+                wsData.push([c("Total Penghuni", styleDataText), c(Number(stats.occupantsTotal), styleDataNumber), c("Orang", styleDataNumber)]);
                 const sisaKuotaKLB = stats.maxAllowedKLBArea - stats.brutoTotal;
-                wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]); wsData.push([]);
+
+                // Tabel Parkir
+                wsData.push([c("KEBUTUHAN PARKIR", styleSubtitle)]); wsData.push([]);
+                wsData.push([c("Aturan Parkir", styleHeader), c("Basis", styleHeader), c("Kendaraan", styleHeader), c("Jml Dibutuhkan", styleHeader), c("Est. Luas", styleHeader)]);
+                stats.parkingStats.details.forEach(pr => {
+                    wsData.push([c(`${pr.name} (1 per ${pr.ratio})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
+                });
+                wsData.push([c("TOTAL KEBUTUHAN LAHAN PARKIR", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.totalArea} m²`, styleDataNumberBold)]);
+                wsData.push([c("Sisa Lahan Permukaan (Di luar KDB)", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.remainingSurfaceArea.toFixed(1)} m²`, styleDataNumberBold)]);
                 wsData.push([]);
 
                 stats.buildingDetails.forEach(b => {
                    wsData.push([c(`RINCIAN: ${b.name.toUpperCase()}`, styleSubtitle)]);
-                   if (b.notes && b.notes.trim() !== '') {
-                       wsData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "475569" } } })]);
-                   }
+                   if (b.notes && b.notes.trim() !== '') wsData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "475569" } } })]);
                    wsData.push([]);
                    wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jml Ruang", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Penghuni", styleHeader), c("Keterangan", styleHeader) ]);
 
                    b.floors.forEach(f => {
                       const floorHeaderFill = { fgColor: { rgb: "F1F5F9" } };
-                      wsData.push([
-                        c(f.name, { ...styleDataText, font: { bold: true }, fill: floorHeaderFill }),
-                        c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill })
-                      ]);
+                      wsData.push([ c(f.name, { ...styleDataText, font: { bold: true }, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }) ]);
                       
                       let floorRooms = rooms.filter(r => r.floorId === f.id);
                       if (reportSortBy === 'name') floorRooms = [...floorRooms].sort((a, b) => a.label.localeCompare(b.label));
@@ -1086,9 +745,7 @@
 
                       floorRooms.forEach(room => {
                         const z = zones.find(z => z.id === room.zoneId) || zones[0];
-                        const count = Number(room.count) || 0; 
-                        const std = Number(room.std) || 0; 
-                        const netto = count * std;
+                        const count = Number(room.count) || 0; const std = Number(room.std) || 0; const netto = count * std;
                         wsData.push([ c("", styleDataText), c(room.label, styleDataText), c(z.label, styleDataNumber), c(count, styleDataNumber), c(std, styleDataNumber), c(Number(netto.toFixed(2)), styleDataNumberBold), c(room.occupants || "-", styleDataNumber), c(room.notes || "-", styleDataText) ]);
                       });
 
@@ -1096,12 +753,7 @@
                         const facValue = Number(f.factorValues?.[fac.id]) || 0; const facArea = (f.netto * facValue) / 100;
                         const z = zones.find(z => z.id === fac.zoneId);
                         if (facValue > 0) {
-                          wsData.push([ 
-                            c("", styleDataText), c("", styleDataText), 
-                            c(`+ ${fac.label} ${z ? `(→ ${z.label})` : ''}`, { ...styleDataText, font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } }), 
-                            c(`${facValue}%`, { ...styleDataNumber, font: { italic: true } }), 
-                            c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder), c("", emptyBorder) 
-                          ]);
+                          wsData.push([ c("", styleDataText), c("", styleDataText), c(`+ ${fac.label} ${z ? `(→ ${z.label})` : ''}`, { ...styleDataText, font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } }), c(`${facValue}%`, { ...styleDataNumber, font: { italic: true } }), c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder), c("", emptyBorder) ]);
                         }
                       });
                       
@@ -1115,16 +767,7 @@
                    const buildingTotalFill = { fgColor: { rgb: "1E293B" } };
                    const styleBuildingTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
                    const styleBuildingTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
-                   wsData.push([
-                      c("", { border: borderAll, fill: buildingTotalFill }),
-                      c(`TOTAL GFA & PENGHUNI ${b.name.toUpperCase()}`, styleBuildingTotalText),
-                      c("", { border: borderAll, fill: buildingTotalFill }),
-                      c("", { border: borderAll, fill: buildingTotalFill }),
-                      c("", { border: borderAll, fill: buildingTotalFill }),
-                      c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber),
-                      c(b.occupants, styleBuildingTotalNumber),
-                      c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E2E8F0" }, italic: true }, fill: buildingTotalFill, border: borderAll })
-                   ]);
+                   wsData.push([ c("", { border: borderAll, fill: buildingTotalFill }), c(`TOTAL GFA & PENGHUNI ${b.name.toUpperCase()}`, styleBuildingTotalText), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber), c(b.occupants, styleBuildingTotalNumber), c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E2E8F0" }, italic: true }, fill: buildingTotalFill, border: borderAll }) ]);
                    wsData.push([]);
                 });
 
@@ -1132,16 +775,7 @@
                 const styleGrandTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
                 const styleGrandTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
 
-                wsData.push([
-                  c("", { border: borderAll, fill: grandTotalFill }),
-                  c("TOTAL GFA", styleGrandTotalText),
-                  c("", { border: borderAll, fill: grandTotalFill }),
-                  c("", { border: borderAll, fill: grandTotalFill }),
-                  c("", { border: borderAll, fill: grandTotalFill }),
-                  c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber),
-                  c("", { border: borderAll, fill: grandTotalFill }),
-                  c("", { border: borderAll, fill: grandTotalFill })
-                ]);
+                wsData.push([ c("", { border: borderAll, fill: grandTotalFill }), c("TOTAL GFA", styleGrandTotalText), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }) ]);
                 wsData.push([]);
 
                 const wb = window.XLSX.utils.book_new(); const ws = window.XLSX.utils.aoa_to_sheet(wsData);
@@ -1152,11 +786,9 @@
               finally { setIsExportingExcel(false); }
             };
 
-            if (window.XLSX && window.__isXlsxStyleLoaded) {
-              generateXLSX();
-            } else {
-              const script = document.createElement('script');
-              script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
+            if (window.XLSX && window.__isXlsxStyleLoaded) { generateXLSX(); } 
+            else {
+              const script = document.createElement('script'); script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
               script.onload = () => { window.__isXlsxStyleLoaded = true; generateXLSX(); };
               script.onerror = () => { setIsExportingExcel(false); showAlert("Gagal memuat Excel.", "Error"); };
               document.body.appendChild(script);
@@ -1199,7 +831,7 @@
                       <p className="text-xs text-slate-500 font-medium tracking-tight">Skematik Perhitungan Intensitas Lahan dan Program Ruang</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
                     <div className="flex items-center gap-2 border-r border-slate-200 pr-4 relative">
                       <button onClick={handleNewProject} title="Buat Proyek Baru" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 transition-colors">
                         {FilePlus && <FilePlus className="w-4 h-4" />} Baru
@@ -1218,9 +850,10 @@
                       <button onClick={undo} disabled={!canUndo} className={`p-2 rounded-lg transition-colors ${canUndo ? 'text-slate-700 hover:bg-slate-100 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}>{Undo2 && <Undo2 className="w-5 h-5" />}</button>
                       <button onClick={redo} disabled={!canRedo} className={`p-2 rounded-lg transition-colors ${canRedo ? 'text-slate-700 hover:bg-slate-100 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}>{Redo2 && <Redo2 className="w-5 h-5" />}</button>
                     </div>
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                      <button onClick={() => setActiveTab('input')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'input' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Rancangan</button>
-                      <button onClick={() => setActiveTab('report')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'report' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Analisis & Laporan</button>
+                    <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
+                      <button onClick={() => setActiveTab('input')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'input' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Rancangan</button>
+                      <button onClick={() => setActiveTab('parking')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${activeTab === 'parking' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{Car && <Car className="w-4 h-4" />} Parkir</button>
+                      <button onClick={() => setActiveTab('report')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'report' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Analisis & Laporan</button>
                     </div>
                   </div>
                 </div>
@@ -1229,7 +862,7 @@
               <main id="printable-report" className="flex-grow max-w-6xl mx-auto w-full p-4 md:p-8 print:p-0 print:max-w-none">
                 
                 {/* HEADER PROYEK */}
-                <div className={`mb-8 border-b-2 pb-4 pt-2 flex flex-col md:flex-row md:items-start justify-between gap-4 ${activeTab === 'report' ? 'border-slate-900 print:border-black' : 'border-slate-200'}`}>
+                <div className={`mb-8 border-b-2 pb-4 pt-2 flex flex-col md:flex-row md:items-start justify-between gap-4 ${(activeTab === 'report' || activeTab === 'parking') ? 'border-slate-900 print:border-black' : 'border-slate-200'}`}>
                   <div className="flex-1 w-full relative group">
                     {activeTab === 'input' ? (
                       <React.Fragment>
@@ -1273,11 +906,13 @@
                     )}
                   </div>
                   
-                  {activeTab === 'report' && (
+                  {(activeTab === 'report' || activeTab === 'parking') && (
                     <div className="flex items-center gap-3 print:hidden shrink-0" data-html2canvas-ignore="true">
-                      <button onClick={handleExportExcel} disabled={isExportingExcel} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isExportingExcel ? 'bg-emerald-400 text-white cursor-wait' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
-                        {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel (.xlsx)'}
-                      </button>
+                      {activeTab === 'report' && (
+                          <button onClick={handleExportExcel} disabled={isExportingExcel} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isExportingExcel ? 'bg-emerald-400 text-white cursor-wait' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
+                            {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel (.xlsx)'}
+                          </button>
+                      )}
                       <button onClick={handlePrintPDF} disabled={isPrinting} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isPrinting ? 'bg-indigo-400 text-white cursor-wait' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
                         {Printer && <Printer className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />} {isPrinting ? 'Memproses...' : 'Cetak PDF'}
                       </button>
@@ -1285,65 +920,201 @@
                   )}
                 </div>
 
-                {/* GLOBAL DASHBOARD */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 print:mb-6">
-                  <ComplianceBadge 
-                    label="KDB Kawasan" 
-                    isOk={stats.currentKDB <= (Number(kdbLimit)||0)} 
-                    current={stats.currentKDB} 
-                    limit={kdbLimit} 
-                    unit="%" 
-                    subText={
-                      <React.Fragment>
-                        <div className="mb-0.5">Terdesain: {stats.footprint.toFixed(1)} m²</div>
-                        <div>Maks: {stats.maxAllowedKDBArea.toFixed(1)} m²</div>
-                      </React.Fragment>
-                    } 
-                  />
-                  <ComplianceBadge 
-                    label="KTB Kawasan" 
-                    isOk={stats.currentKTB <= (Number(ktbLimit)||0)} 
-                    current={stats.currentKTB} 
-                    limit={ktbLimit} 
-                    unit="%" 
-                    subText={
-                      <React.Fragment>
-                        <div className="mb-0.5">Terdesain: {stats.basementFootprint.toFixed(1)} m²</div>
-                        <div>Maks: {stats.maxAllowedKTBArea.toFixed(1)} m²</div>
-                      </React.Fragment>
-                    } 
-                  />
-                  <div className="p-4 rounded-xl border flex flex-col justify-between transition-all bg-emerald-50 border-emerald-100 text-emerald-800 print:border-slate-300 print:bg-transparent">
-                    <div className="flex items-center justify-between mb-2"><span className="text-[10px] font-black uppercase tracking-wider opacity-70 print:text-black">KDH (Area Hijau)</span>{Info && <Info className="w-4 h-4 print:text-black" />}</div>
-                    <div className="flex flex-col"><div className="flex items-baseline gap-1"><span className="text-xl font-black print:text-black">{kdhLimit}</span><span className="text-[10px] font-bold opacity-60 print:text-black">% MIN</span></div><div className="text-[9px] font-bold mt-1 opacity-80 uppercase tracking-tighter leading-tight print:text-black">Min: {stats.minRequiredKDHArea.toFixed(1)} m²</div></div>
-                    <div className="mt-2 text-[10px] font-bold italic print:text-black">CEK DESAIN</div>
-                  </div>
-                  <ComplianceBadge 
-                    label="KLB (FAR) Kawasan" 
-                    isOk={stats.currentKLB <= (Number(klbLimit)||0)} 
-                    current={stats.currentKLB} 
-                    limit={klbLimit} 
-                    subText={
-                      <React.Fragment>
-                        <div className="mb-0.5">Terdesain: {stats.brutoTotal.toFixed(1)} m²</div>
-                        <div>Maks: {stats.maxAllowedKLBArea.toFixed(1)} m²</div>
-                      </React.Fragment>
-                    } 
-                  />
-                  
-                  <div className="bg-slate-900 p-4 rounded-xl text-white flex flex-col justify-between shadow-lg col-span-2 print:bg-white print:text-black print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center justify-between opacity-70"><span className="text-[10px] font-black uppercase tracking-wider print:text-black">TOTAL TERDESAIN</span>{FileText && <FileText className="w-4 h-4 print:hidden" />}</div>
-                    <div className="text-2xl font-black mt-1">{stats.brutoTotal.toFixed(1)} <span className="text-xs font-normal">m²</span></div>
-                    <div className={`mt-2 text-[9px] font-bold uppercase tracking-tighter print:text-black flex justify-between items-center gap-2 ${stats.brutoTotal > stats.maxAllowedKLBArea ? 'text-rose-400' : 'text-indigo-300'}`}>
-                      <span className="truncate">Sisa KLB: {(stats.maxAllowedKLBArea - stats.brutoTotal).toFixed(1)} m²</span>
-                      <span className={`px-1.5 py-0.5 rounded border shrink-0 ${stats.brutoTotal > stats.maxAllowedKLBArea ? 'bg-rose-950/50 border-rose-500/20' : 'bg-white/10 border-white/5'}`}>
-                        {stats.maxAllowedKLBArea > 0 ? ((stats.brutoTotal / stats.maxAllowedKLBArea) * 100).toFixed(1) : 0}% Terdesain
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                {/* TAB PARKING VIEW */}
+                {activeTab === 'parking' && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                        {/* HERO PARKING DASHBOARD */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 print:break-inside-avoid">
+                            <div className={`h-full p-6 rounded-3xl border flex flex-col print:border-slate-400 print:bg-white shadow-xl ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-50 border-rose-200 shadow-rose-100/50' : 'bg-slate-900 border-slate-800 text-white'}`}>
+                                <div className="flex items-center justify-between mb-6">
+                                    <span className={`text-xs font-black uppercase tracking-widest ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : 'text-indigo-300'} print:text-slate-600`}>Total Kebutuhan Parkir</span>
+                                    <div className={`p-3 rounded-2xl ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-100 text-rose-600' : 'bg-white/10 text-white'} print:text-black print:border`}>
+                                        {Car && <Car className="w-8 h-8" />}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className={`text-5xl font-black mb-1 print:text-black ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-700' : ''}`}>{stats.parkingStats.totalArea.toLocaleString('id-ID')} <span className="text-xl font-bold">m²</span></div>
+                                    <div className={`text-sm font-medium opacity-80 print:text-slate-600 ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : ''}`}>Total dari {parkingRules.length} aturan parkir.</div>
+                                </div>
+                            </div>
+                            
+                            <div className="h-full p-6 rounded-3xl border bg-white border-slate-200 shadow-lg flex flex-col print:border-slate-400">
+                                <div className="flex items-center justify-between mb-6">
+                                    <span className="text-xs font-black uppercase tracking-widest text-slate-500">Sisa Lahan Permukaan</span>
+                                    {LandPlot && <LandPlot className="w-6 h-6 text-slate-400" />}
+                                </div>
+                                <div>
+                                    <div className="flex items-end gap-3 mb-2">
+                                        <div className="text-4xl font-black text-slate-800">{stats.parkingStats.remainingSurfaceArea.toFixed(1)} <span className="text-lg font-bold">m²</span></div>
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wide">L. Lahan ({landArea}) - Footprint Gedung ({stats.footprint.toFixed(1)})</div>
+                                </div>
+                                
+                                <div className="mt-auto pt-6">
+                                    {stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? (
+                                        <div className="p-3 bg-rose-100 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex gap-2 items-start print:border-black print:text-black">
+                                            {AlertTriangle && <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
+                                            <p>Lahan permukaan Anda tidak cukup. Anda wajib menambahkan Basement Parkir atau merencanakan Gedung Parkir Vertikal mandiri.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold flex gap-2 items-center print:border-black print:text-black">
+                                            {CheckCircle2 && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                                            <p>Lahan di permukaan cukup untuk menampung seluruh parkir (belum termasuk desain hardscape dan softscape).</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
 
-                {activeTab === 'input' ? (
+                        {/* RULE MANAGER */}
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm print:break-inside-avoid">
+                            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100 print:border-black">
+                                <h3 className="font-black text-slate-800 text-lg uppercase tracking-wider">Aturan Kalkulasi Parkir</h3>
+                                <button onClick={addParkingRule} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl text-xs font-black uppercase tracking-widest transition-colors print:hidden">
+                                    {Plus && <Plus className="w-4 h-4" />} Tambah Aturan
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {parkingRules.map((rule, idx) => {
+                                    const statDetail = stats.parkingStats.details.find(d => d.id === rule.id);
+                                    return (
+                                        <div key={rule.id} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col lg:flex-row gap-6 print:bg-white print:border-slate-300 print:break-inside-avoid">
+                                            
+                                            {/* Kolom Kiri: Input Aturan */}
+                                            <div className="flex-1 space-y-4 print:hidden">
+                                                <div className="flex justify-between items-center">
+                                                    <input type="text" value={rule.name} onChange={(e) => updateParkingRule(rule.id, 'name', e.target.value)} className="bg-transparent border-b-2 border-slate-300 hover:border-indigo-400 focus:border-indigo-600 focus:ring-0 font-black text-slate-800 text-lg outline-none w-full mr-4 transition-colors" placeholder="Nama Aturan (Misal: Parkir Tamu)" />
+                                                    <button onClick={() => removeParkingRule(rule.id)} className="text-slate-400 hover:text-rose-500 bg-white p-1.5 rounded-lg shadow-sm border border-slate-200 transition-colors">
+                                                        {Trash2 && <Trash2 className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                    <div>
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Kendaraan</label>
+                                                        <select value={rule.vehicleType} onChange={(e) => updateParkingRule(rule.id, 'vehicleType', e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-400">
+                                                            <option value="Mobil">🚗 Mobil</option>
+                                                            <option value="Motor">🏍️ Motor</option>
+                                                            <option value="Bus/Truk">🚌 Bus/Truk</option>
+                                                            <option value="Sepeda">🚲 Sepeda</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Luas/Unit (m²)</label>
+                                                        <input type="number" step="0.1" value={rule.areaPerVehicle} onChange={(e) => updateParkingRule(rule.id, 'areaPerVehicle', Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-400" title="Standar luas 1 petak parkir + sirkulasi manuver" />
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Basis Hitungan</label>
+                                                        <select value={rule.basis} onChange={(e) => updateParkingRule(rule.id, 'basis', e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-400">
+                                                            <option value="gfa">Luas GFA Total (Seluruh Kawasan)</option>
+                                                            <option value="zone">Luas Bruto Zona Spesifik</option>
+                                                            <option value="occupants">Jml Penghuni Keseluruhan</option>
+                                                        </select>
+                                                    </div>
+                                                    
+                                                    {rule.basis === 'zone' && (
+                                                        <div className="col-span-2 md:col-span-4 mt-1 border-t border-slate-200/60 pt-3">
+                                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2">Pilih Target Zona (Bisa lebih dari 1)</label>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {zones.map(z => {
+                                                                    const isSelected = (rule.targetZoneIds || []).includes(z.id);
+                                                                    return (
+                                                                        <button 
+                                                                            key={z.id}
+                                                                            onClick={() => {
+                                                                                const currentIds = rule.targetZoneIds || [];
+                                                                                const newIds = isSelected ? currentIds.filter(id => id !== z.id) : [...currentIds, z.id];
+                                                                                updateParkingRule(rule.id, 'targetZoneIds', newIds);
+                                                                            }}
+                                                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${isSelected ? 'bg-indigo-100 border-indigo-300 text-indigo-700 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 shadow-sm'}`}
+                                                                        >
+                                                                            {z.label}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-center gap-3">
+                                                    <span className="text-xs font-bold text-indigo-800">Sediakan 1 {rule.vehicleType} untuk setiap</span>
+                                                    <input type="number" value={rule.ratio} onChange={(e) => updateParkingRule(rule.id, 'ratio', Number(e.target.value))} className="w-20 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-center text-sm font-black text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-400" />
+                                                    <span className="text-xs font-bold text-indigo-800">{rule.basis === 'occupants' ? 'Orang/Penghuni' : 'm² Luas Bangunan'}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Kolom Kanan: Output Kalkulasi (Selalu tampil termasuk saat print) */}
+                                            <div className="w-full lg:w-64 bg-slate-900 rounded-2xl p-5 text-white flex flex-col justify-center relative overflow-hidden print:bg-white print:text-black print:border print:border-black print:w-full">
+                                                {/* Background Pattern */}
+                                                <div className="absolute -right-4 -bottom-4 opacity-5 print:hidden">
+                                                    {ParkingCircle ? <ParkingCircle className="w-32 h-32" /> : <Car className="w-32 h-32" />}
+                                                </div>
+                                                
+                                                <div className="relative z-10">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 print:text-slate-500">Hasil: {rule.name}</div>
+                                                    <div className="flex items-baseline gap-2 mb-4">
+                                                        <span className="text-4xl font-black text-emerald-400 print:text-black">{statDetail ? statDetail.count : 0}</span>
+                                                        <span className="text-sm font-bold uppercase tracking-wider text-slate-300 print:text-slate-600">{rule.vehicleType}</span>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-1.5 border-t border-slate-700 pt-3 print:border-slate-300">
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-slate-400 print:text-slate-600 truncate mr-2" title={statDetail ? statDetail.basisLabel : '-'}>Basis ({statDetail ? statDetail.basisLabel : '-'})</span>
+                                                            <span className="font-bold print:text-black shrink-0">{statDetail ? statDetail.baseValue.toLocaleString('id-ID') : 0}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-slate-400 print:text-slate-600">Butuh Area Parkir</span>
+                                                            <span className="font-bold text-indigo-300 print:text-black">{statDetail ? statDetail.area.toLocaleString('id-ID') : 0} m²</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    );
+                                })}
+                                
+                                {parkingRules.length === 0 && (
+                                    <div className="text-center py-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                                        <p className="text-sm font-bold text-slate-500 mb-4">Belum ada aturan perhitungan parkir.</p>
+                                        <button onClick={addParkingRule} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+                                            Tambah Aturan Pertama
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* DASHBOARD UMUM UNTUK TAB INPUT DAN REPORT */}
+                {activeTab !== 'parking' && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 print:mb-6">
+                      <ComplianceBadge label="KDB Kawasan" isOk={stats.currentKDB <= (Number(kdbLimit)||0)} current={stats.currentKDB} limit={kdbLimit} unit="%" subText={<React.Fragment><div className="mb-0.5">Terdesain: {stats.footprint.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKDBArea.toFixed(1)} m²</div></React.Fragment>} />
+                      <ComplianceBadge label="KTB Kawasan" isOk={stats.currentKTB <= (Number(ktbLimit)||0)} current={stats.currentKTB} limit={ktbLimit} unit="%" subText={<React.Fragment><div className="mb-0.5">Terdesain: {stats.basementFootprint.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKTBArea.toFixed(1)} m²</div></React.Fragment>} />
+                      <div className="p-4 rounded-xl border flex flex-col justify-between transition-all bg-emerald-50 border-emerald-100 text-emerald-800 print:border-slate-300 print:bg-transparent">
+                        <div className="flex items-center justify-between mb-2"><span className="text-[10px] font-black uppercase tracking-wider opacity-70 print:text-black">KDH (Area Hijau)</span>{Info && <Info className="w-4 h-4 print:text-black" />}</div>
+                        <div className="flex flex-col"><div className="flex items-baseline gap-1"><span className="text-xl font-black print:text-black">{kdhLimit}</span><span className="text-[10px] font-bold opacity-60 print:text-black">% MIN</span></div><div className="text-[9px] font-bold mt-1 opacity-80 uppercase tracking-tighter leading-tight print:text-black">Min: {stats.minRequiredKDHArea.toFixed(1)} m²</div></div>
+                        <div className="mt-2 text-[10px] font-bold italic print:text-black">CEK DESAIN</div>
+                      </div>
+                      <ComplianceBadge label="KLB (FAR) Kawasan" isOk={stats.currentKLB <= (Number(klbLimit)||0)} current={stats.currentKLB} limit={klbLimit} subText={<React.Fragment><div className="mb-0.5">Terdesain: {stats.brutoTotal.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKLBArea.toFixed(1)} m²</div></React.Fragment>} />
+                      
+                      <div className="bg-slate-900 p-4 rounded-xl text-white flex flex-col justify-between shadow-lg col-span-2 print:bg-white print:text-black print:border print:border-slate-300 print:shadow-none">
+                        <div className="flex items-center justify-between opacity-70"><span className="text-[10px] font-black uppercase tracking-wider print:text-black">TOTAL TERDESAIN</span>{FileText && <FileText className="w-4 h-4 print:hidden" />}</div>
+                        <div className="text-2xl font-black mt-1">{stats.brutoTotal.toFixed(1)} <span className="text-xs font-normal">m²</span></div>
+                        <div className={`mt-2 text-[9px] font-bold uppercase tracking-tighter print:text-black flex justify-between items-center gap-2 ${stats.brutoTotal > stats.maxAllowedKLBArea ? 'text-rose-400' : 'text-indigo-300'}`}>
+                          <span className="truncate">Sisa KLB: {(stats.maxAllowedKLBArea - stats.brutoTotal).toFixed(1)} m²</span>
+                          <span className={`px-1.5 py-0.5 rounded border shrink-0 ${stats.brutoTotal > stats.maxAllowedKLBArea ? 'bg-rose-950/50 border-rose-500/20' : 'bg-white/10 border-white/5'}`}>
+                            {stats.maxAllowedKLBArea > 0 ? ((stats.brutoTotal / stats.maxAllowedKLBArea) * 100).toFixed(1) : 0}% Terdesain
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                )}
+
+                {activeTab === 'input' && (
                   <div className="space-y-6">
                     
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -1730,8 +1501,11 @@
                       )}
                     </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col gap-8">
+                )}
+
+                {/* TAB REPORT VIEW */}
+                {activeTab === 'report' && (
+                  <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-2">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       
                       {/* Analisis GFA Kawasan */}
@@ -1939,7 +1713,7 @@
                         ))}
 
                         {/* REKAPITULASI AKHIR MASTERPLAN */}
-                        <div className="grid grid-cols-2 gap-4 mt-8 print:break-inside-avoid border-t-4 border-slate-900 pt-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 print:break-inside-avoid border-t-4 border-slate-900 pt-8">
                           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 print:bg-white print:border-black">
                             <p className="text-[10px] font-black text-slate-400 uppercase mb-3 print:text-black">Perhitungan Intensitas Lahan</p>
                             <div className="space-y-2 text-xs">
@@ -1950,12 +1724,17 @@
                               <div className="flex justify-between border-b border-slate-100 pb-1 print:border-slate-300"><span>KLB Kawasan (Maks. {klbLimit})</span> <span className={`font-black ${stats.currentKLB > (Number(klbLimit)||0) ? 'text-rose-600 print:text-black' : ''}`}>{stats.currentKLB.toFixed(2)}</span></div>
                             </div>
                           </div>
-                          <div className="p-4 bg-slate-900 rounded-xl text-white print:bg-white print:text-black print:border print:border-black">
-                            <p className="text-[10px] font-black text-indigo-300 uppercase mb-3 print:text-black">Total Luas Bangunan</p>
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Luas Netto</span> <span className="font-black text-white print:text-black">{stats.nettoTotal.toFixed(1)} m²</span></div>
-                              <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Add. Factors</span> <span className="font-black text-white print:text-black">{Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(1)} m²</span></div>
-                              <div className="flex justify-between text-lg font-black pt-2 mt-2 print:border-black"><span>TOTAL GFA</span> <span>{stats.brutoTotal.toFixed(1)} m²</span></div>
+                          <div className="p-4 bg-slate-900 rounded-xl text-white print:bg-white print:text-black print:border print:border-black flex flex-col justify-between">
+                            <div>
+                                <p className="text-[10px] font-black text-indigo-300 uppercase mb-3 print:text-black">Total Luas Bangunan & Penghuni</p>
+                                <div className="space-y-2 text-xs">
+                                  <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Luas Netto</span> <span className="font-black text-white print:text-black">{stats.nettoTotal.toFixed(1)} m²</span></div>
+                                  <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Add. Factors</span> <span className="font-black text-white print:text-black">{Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(1)} m²</span></div>
+                                  <div className="flex justify-between border-b border-slate-700 pb-1 print:border-slate-300"><span>Total Kapasitas Penghuni</span> <span className="font-black text-white print:text-black">{stats.occupantsTotal} Orang</span></div>
+                                </div>
+                            </div>
+                            <div className="flex justify-between text-lg font-black pt-2 mt-2 print:border-t print:border-black">
+                                <span>TOTAL GFA KAWASAN</span> <span>{stats.brutoTotal.toFixed(1)} m²</span>
                             </div>
                           </div>
                         </div>
@@ -1965,7 +1744,7 @@
                 )}
               </main>
 
-              {/* MODALS */}
+              {/* MODALS Pindah / Duplikat / Hapus */}
               {moveModal.isOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
                   <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
