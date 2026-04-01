@@ -359,6 +359,7 @@
 
             const parkingStats = {
                 totalArea: 0,
+                totalCount: 0,
                 details: parkingRules.map(rule => {
                     let baseValue = 0; let basisLabel = '';
                     if (rule.basis === 'gfa') { baseValue = globalBrutoTotal; basisLabel = 'Total GFA Kawasan'; }
@@ -388,6 +389,7 @@
                 })
             };
             parkingStats.totalArea = parkingStats.details.reduce((sum, d) => sum + d.area, 0);
+            parkingStats.totalCount = parkingStats.details.reduce((sum, d) => sum + d.count, 0);
             parkingStats.remainingSurfaceArea = lArea - globalFootprintArea;
 
             return { 
@@ -583,7 +585,7 @@
               setAppState(prev => {
                 const newFloors = [...prev.floors]; const bFloors = newFloors.filter(f => f.buildingId === activeBuildingId); const otherFloors = newFloors.filter(f => f.buildingId !== activeBuildingId);
                 const [movedFloor] = bFloors.splice(draggedFloorIdx, 1); bFloors.splice(targetIdx, 0, movedFloor);
-                let standardCounter = 1; const reorderedBFloors = bFloors.map((floor) => /^Lantai\s(\d+)$/i.test(floor.name.trim()) ? { ...floor, name: `Lantai ${standardCounter++}` } : floor);
+                let standardCounter = 1; const reorderedBFloors = bFloors.map((floor) => /^Lantai\s\d+$/i.test(floor.name.trim()) ? { ...floor, name: `Lantai ${standardCounter++}` } : floor);
                 return { ...prev, floors: [...otherFloors, ...reorderedBFloors] };
               });
             }
@@ -650,6 +652,13 @@
                 }
                 if (loadedState && loadedState.floors && loadedState.rooms && loadedState.factors && loadedState.buildings) {
                   if(!loadedState.parkingRules) loadedState.parkingRules = INITIAL_APP_STATE.parkingRules;
+                  
+                  loadedState.parkingRules = loadedState.parkingRules.map(pr => {
+                      if (pr.targetZoneId !== undefined) { pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : []; delete pr.targetZoneId; }
+                      if (!pr.targetZoneIds) pr.targetZoneIds = [];
+                      return pr;
+                  });
+
                   setAppState(loadedState); setActiveBuildingId(loadedState.buildings[0].id);
                 } else showAlert("Gagal memuat: File tidak valid.", "Error");
               } catch (err) { showAlert("Gagal memuat: Format JSON salah.", "Error"); }
@@ -715,7 +724,7 @@
                 wsData.push([c("Total Luas Netto", styleDataText), c(Number(stats.nettoTotal.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
                 wsData.push([c("Add. Factors (Akumulasi)", styleDataText), c(Number(Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
                 wsData.push([c("TOTAL GFA", { ...styleDataText, font: { bold: true } }), c(Number(stats.brutoTotal.toFixed(2)), styleDataNumberBold), c("m²", styleDataNumberBold)]);
-                wsData.push([c("Total Penghuni", styleDataText), c(Number(stats.occupantsTotal), styleDataNumber), c("Orang", styleDataNumber)]);
+                wsData.push([c("Total Kapasitas Penghuni", styleDataText), c(Number(stats.occupantsTotal), styleDataNumber), c("Orang", styleDataNumber)]);
                 const sisaKuotaKLB = stats.maxAllowedKLBArea - stats.brutoTotal;
                 wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]); wsData.push([]);
 
@@ -925,41 +934,73 @@
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                         {/* HERO PARKING DASHBOARD */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 print:break-inside-avoid">
-                            <div className={`h-full p-6 rounded-3xl border flex flex-col print:border-slate-400 print:bg-white shadow-xl ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-50 border-rose-200 shadow-rose-100/50' : 'bg-slate-900 border-slate-800 text-white'}`}>
-                                <div className="flex items-center justify-between mb-6">
-                                    <span className={`text-xs font-black uppercase tracking-widest ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : 'text-indigo-300'} print:text-slate-600`}>Total Kebutuhan Parkir</span>
-                                    <div className={`p-3 rounded-2xl ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-100 text-rose-600' : 'bg-white/10 text-white'} print:text-black print:border`}>
-                                        {Car && <Car className="w-8 h-8" />}
+                            
+                            {/* KOTAK KIRI: TOTAL KEBUTUHAN */}
+                            <div className={`h-full p-6 rounded-3xl border flex flex-col justify-between print:border-slate-400 print:bg-white shadow-xl ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-50 border-rose-200 shadow-rose-100/50' : 'bg-slate-900 border-slate-800 text-white'}`}>
+                                <div>
+                                    <div className="flex items-start justify-between mb-6">
+                                        <span className={`text-xs font-black uppercase tracking-widest ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : 'text-indigo-300'} print:text-slate-600`}>Total Kebutuhan Parkir</span>
+                                        <div className={`p-3 rounded-2xl ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-100 text-rose-600' : 'bg-white/10 text-white'} print:text-black print:border`}>
+                                            {Car && <Car className="w-6 h-6" />}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 mb-2">
+                                        {Object.keys(stats.parkingStats.details.reduce((acc, r) => { if(r.count > 0) acc[r.vehicleType] = (acc[r.vehicleType]||0) + r.count; return acc; }, {})).length > 0 ? (
+                                            Object.entries(stats.parkingStats.details.reduce((acc, r) => { if(r.count > 0) acc[r.vehicleType] = (acc[r.vehicleType]||0) + r.count; return acc; }, {})).map(([type, count]) => (
+                                                <div key={type} className="flex items-baseline gap-1.5">
+                                                    <span className={`text-4xl md:text-5xl font-black print:text-black ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-700' : ''}`}>
+                                                        {count.toLocaleString('id-ID')}
+                                                    </span>
+                                                    <span className="text-sm font-bold uppercase tracking-widest opacity-80">{type}</span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className={`text-5xl font-black print:text-black opacity-50 ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-700' : ''}`}>
+                                                0 <span className="text-xl font-bold uppercase tracking-widest">Unit</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className={`text-sm font-bold opacity-90 print:text-slate-600 ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : 'text-indigo-200'}`}>
+                                        Estimasi Luas: {stats.parkingStats.totalArea.toLocaleString('id-ID')} m²
                                     </div>
                                 </div>
-                                <div>
-                                    <div className={`text-5xl font-black mb-1 print:text-black ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-700' : ''}`}>{stats.parkingStats.totalArea.toLocaleString('id-ID')} <span className="text-xl font-bold">m²</span></div>
-                                    <div className={`text-sm font-medium opacity-80 print:text-slate-600 ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : ''}`}>Total dari {parkingRules.length} aturan parkir.</div>
+
+                                <div className={`mt-8 pt-5 border-t ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'border-rose-200/50' : 'border-slate-700'} print:border-slate-200`}>
+                                    <div className={`text-xs font-medium opacity-80 print:text-slate-600 ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'text-rose-600' : ''}`}>
+                                        Terakumulasi dari {parkingRules.length} aturan parkir.
+                                    </div>
                                 </div>
                             </div>
                             
-                            <div className="h-full p-6 rounded-3xl border bg-white border-slate-200 shadow-lg flex flex-col print:border-slate-400">
-                                <div className="flex items-center justify-between mb-6">
-                                    <span className="text-xs font-black uppercase tracking-widest text-slate-500">Sisa Lahan Permukaan</span>
-                                    {LandPlot && <LandPlot className="w-6 h-6 text-slate-400" />}
-                                </div>
+                            {/* KOTAK KANAN: SISA LAHAN */}
+                            <div className="h-full p-6 rounded-3xl border bg-white border-slate-200 shadow-lg flex flex-col justify-between print:border-slate-400">
                                 <div>
-                                    <div className="flex items-end gap-3 mb-2">
-                                        <div className="text-4xl font-black text-slate-800">{stats.parkingStats.remainingSurfaceArea.toFixed(1)} <span className="text-lg font-bold">m²</span></div>
+                                    <div className="flex items-start justify-between mb-6">
+                                        <span className="text-xs font-black uppercase tracking-widest text-slate-500">Sisa Lahan Permukaan</span>
+                                        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 print:text-black">
+                                            {LandPlot && <LandPlot className="w-6 h-6" />}
+                                        </div>
                                     </div>
-                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wide">L. Lahan ({landArea}) - Footprint Gedung ({stats.footprint.toFixed(1)})</div>
+                                    
+                                    <div className="text-4xl md:text-5xl font-black text-slate-800 mb-2 print:text-black">
+                                        {stats.parkingStats.remainingSurfaceArea.toFixed(1)} <span className="text-xl font-bold uppercase tracking-widest text-slate-400">m²</span>
+                                    </div>
+                                    <div className="text-sm font-bold text-slate-500">
+                                        Luas Lahan ({landArea}) - Footprint KDB ({stats.footprint.toFixed(1)})
+                                    </div>
                                 </div>
                                 
-                                <div className="mt-auto pt-6">
+                                <div className="mt-8 pt-5 border-t border-slate-100 print:border-slate-200">
                                     {stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? (
-                                        <div className="p-3 bg-rose-100 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex gap-2 items-start print:border-black print:text-black">
+                                        <div className="text-xs font-bold text-rose-600 flex gap-2 items-start print:text-black">
                                             {AlertTriangle && <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
-                                            <p>Lahan permukaan Anda tidak cukup. Anda wajib menambahkan Basement Parkir atau merencanakan Gedung Parkir Vertikal mandiri.</p>
+                                            <p>Lahan permukaan tidak cukup. Wajib rencanakan Basement atau Gedung Parkir Vertikal.</p>
                                         </div>
                                     ) : (
-                                        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold flex gap-2 items-center print:border-black print:text-black">
-                                            {CheckCircle2 && <CheckCircle2 className="w-4 h-4 shrink-0" />}
-                                            <p>Lahan di permukaan cukup untuk menampung seluruh parkir (belum termasuk desain hardscape dan softscape).</p>
+                                        <div className="text-xs font-bold text-emerald-600 flex gap-2 items-start print:text-black">
+                                            {CheckCircle2 && <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />}
+                                            <p>Lahan cukup menampung parkir <span className="opacity-70 font-medium italic">(belum termasuk desain hardscape & softscape)</span>.</p>
                                         </div>
                                     )}
                                 </div>
@@ -1161,7 +1202,7 @@
                       </div>
                     </div>
 
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="flex gap-2 flex-wrap items-center">
                       <button onClick={() => setShowFactorManager(!showFactorManager)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${showFactorManager ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>{SlidersHorizontal && <SlidersHorizontal className="w-4 h-4" />} Atur Faktor</button>
                       <button onClick={() => setShowZoneManager(!showZoneManager)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${showZoneManager ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>{Palette && <Palette className="w-4 h-4" />} Atur Zoning</button>
                     </div>
@@ -1319,6 +1360,14 @@
                                   <div className="w-full">
                                       <div className="flex justify-between items-center mb-2">
                                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Keterangan / Catatan Gedung (Opsional)</label>
+                                          <button 
+                                              onClick={() => handleEnhanceBuildingNote(activeBuilding.id, activeBuilding.name, activeBuilding.notes)}
+                                              disabled={aiLoadingState[`building_note_${activeBuilding.id}`]}
+                                              className="flex items-center gap-1 text-[10px] font-bold text-purple-600 hover:text-purple-800 disabled:opacity-50 transition-colors"
+                                          >
+                                              {aiLoadingState[`building_note_${activeBuilding.id}`] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                              {aiLoadingState[`building_note_${activeBuilding.id}`] ? 'Memproses...' : 'Percantik AI'}
+                                          </button>
                                       </div>
                                       <textarea 
                                           rows="2"
@@ -1329,6 +1378,13 @@
                                       />
                                   </div>
                               </div>
+
+                              <datalist id="reference-options">
+                                {referenceSuggestions.map((ref, idx) => <option key={idx} value={ref} />)}
+                              </datalist>
+                              <datalist id="room-name-options">
+                                {roomNameSuggestions.map((name, idx) => <option key={idx} value={name} />)}
+                              </datalist>
 
                               {activeBuildingFloors.length >= 2 && (
                                 <button onClick={() => addFloor('top')} className={`w-full flex items-center justify-center gap-2 py-3 mb-4 text-sm font-bold border-2 border-dashed rounded-2xl transition-all bg-white border-indigo-200 text-indigo-500 hover:bg-indigo-50 hover:border-indigo-400 shadow-sm`}>
@@ -1462,7 +1518,7 @@
                                                       />
                                                     </td>
                                                     <td className="py-3 px-4"><select value={room.zoneId} onChange={(e) => updateRoom(room.id, 'zoneId', e.target.value)} className={`text-[9px] font-black rounded-full px-2 py-1 border-none cursor-pointer w-full ${getZoneStyle(z.colorId).color}`}>{zones.map(z => (<option key={z.id} value={z.id}>{z.label}</option>))}</select></td>
-                                                    <td className="py-3 px-2"><input id={`room-name-input-${room.id}`} type="text" value={room.label} onChange={(e) => updateRoom(room.id, 'label', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-transparent border-none font-medium focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
+                                                    <td className="py-3 px-2"><input id={`room-name-input-${room.id}`} type="text" list="room-name-options" value={room.label} onChange={(e) => updateRoom(room.id, 'label', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-transparent border-none font-medium focus:ring-1 focus:ring-indigo-100 rounded px-2 py-1" /></td>
                                                     <td className="py-3 px-2"><input type="number" value={room.count} onChange={(e) => updateRoom(room.id, 'count', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
                                                     <td className="py-3 px-2"><input type="number" step="0.1" value={room.std} onChange={(e) => updateRoom(room.id, 'std', e.target.value)} onKeyDown={(e) => handleRoomKeyDown(e, f.id)} className="w-full bg-slate-50 border border-slate-200 rounded-lg text-center font-bold py-1 px-1" /></td>
                                                     <td className="py-3 px-4 text-center font-bold text-slate-700">{((Number(room.count) || 0) * (Number(room.std) || 0)).toFixed(1)}</td>
@@ -1805,6 +1861,7 @@
                 </div>
               )}
 
+              {/* MODAL DUPLIKASI GEDUNG */}
               {duplicateBuildingModal.isOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
                   <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
