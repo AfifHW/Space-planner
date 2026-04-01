@@ -329,7 +329,8 @@
               let occupantsFloor = 0;
               const nettoFloor = rooms.filter(r => r.floorId === f.id).reduce((acc, r) => {
                 const count = safeNum(r.count);
-                const headCount = (r.occupants !== undefined && r.occupants !== '') ? safeNum(r.occupants) * count : 0;
+                // Mengubah perhitungan penghuni: tidak lagi dikalikan dengan 'count'
+                const headCount = (r.occupants !== undefined && r.occupants !== '') ? safeNum(r.occupants) : 0;
                 occupantsFloor += headCount;
                 return acc + (count * safeNum(r.std));
               }, 0);
