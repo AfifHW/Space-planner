@@ -68,6 +68,18 @@
             transition: background-color 5000s ease-in-out 0s;
             -webkit-text-fill-color: #27272a !important;
         }
+
+        /* Optimasi Tampilan Cetak (Print/PDF) */
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                background-color: white !important;
+            }
+            .break-inside-avoid {
+                break-inside: avoid;
+            }
+        }
     </style>
 </head>
 <body class="text-slate-900 font-sans pb-20 print:bg-white print:pb-0">
@@ -823,7 +835,6 @@
             return () => window.removeEventListener('keydown', handleKeyDown);
           }, [activeTab, undo, redo, addFloor]);
 
-
           // SAVE / LOAD / EXPORT
           const handleSaveProject = useCallback(async () => {
             const dataStr = JSON.stringify(appState, null, 2);
@@ -878,23 +889,64 @@
               finally { setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: false })); }
           };
 
+          // FUNGSI PRINT PDF (VECTOR & RASTER FALLBACK)
           const handlePrintPDF = useCallback(() => {
-            setIsPrinting(true);
-            const generatePDF = () => {
-              const element = document.getElementById('printable-report');
-              if (!element) { setIsPrinting(false); return; }
-              const opt = {
-                margin: 10, filename: `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}.pdf`,
-                image: { type: 'jpeg', quality: 1.0 }, html2canvas: { scale: 3, useCORS: true, scrollY: 0, letterRendering: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-              };
-              window.html2pdf().set(opt).from(element).save().then(() => setIsPrinting(false));
-            };
-            if (window.html2pdf) generatePDF(); else {
-              const script = document.createElement('script'); script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-              script.onload = generatePDF; script.onerror = () => { setIsPrinting(false); showAlert("Gagal memuat modul PDF.", "Error"); };
-              document.body.appendChild(script);
-            }
-          }, [projectName, showAlert]);
+              if (window.self !== window.top) {
+                  // Jika di dalam iframe (Preview Canvas), window.print() biasanya diblokir.
+                  showConfirm(
+                      "Sistem keamanan mode Preview memblokir fitur Print otomatis browser.\n\n" +
+                      "👉 UNTUK PDF VECTOR (Tajam & Bisa diblok): Buka/Save file HTML ini dan jalankan langsung di tab browser Anda (Local File), lalu klik tombol ini lagi atau tekan Ctrl+P.\n\n" +
+                      "Apakah Anda ingin mengunduh PDF versi Gambar (Raster) sebagai alternatif instan saat ini? (Hasil tetap diekspansi dan tidak akan terpotong)",
+                      () => {
+                          setIsPrinting(true);
+                          const generatePDF = () => {
+                              const element = document.getElementById('printable-report');
+                              if (!element) { setIsPrinting(false); return; }
+                              
+                              // Ekspansi area scroll agar tidak terpotong
+                              const scrollableElements = element.querySelectorAll('.max-h-80, .overflow-y-auto, .max-h-64, .custom-scroll, .max-h-\\[500px\\]');
+                              const originalStyles = [];
+                              scrollableElements.forEach(el => {
+                                  originalStyles.push({ el, maxHeight: el.style.maxHeight, overflowY: el.style.overflowY });
+                                  el.style.maxHeight = 'none'; el.style.overflowY = 'visible';
+                              });
+
+                              const opt = {
+                                  margin: 10, filename: `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}_Raster.pdf`,
+                                  image: { type: 'jpeg', quality: 1.0 }, 
+                                  html2canvas: { scale: 2, useCORS: true, scrollY: -window.scrollY, backgroundColor: '#ffffff' }, 
+                                  jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                              };
+                              
+                              window.html2pdf().set(opt).from(element).save().then(() => {
+                                  originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                                      el.style.maxHeight = maxHeight; el.style.overflowY = overflowY;
+                                  });
+                                  setIsPrinting(false);
+                              }).catch(err => {
+                                  originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                                      el.style.maxHeight = maxHeight; el.style.overflowY = overflowY;
+                                  });
+                                  setIsPrinting(false);
+                                  showAlert("Gagal memproses PDF.", "Error");
+                              });
+                          };
+
+                          if (window.html2pdf) { generatePDF(); } else {
+                              const script = document.createElement('script');
+                              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                              script.onload = generatePDF; 
+                              script.onerror = () => { setIsPrinting(false); showAlert("Gagal memuat library PDF.", "Error"); };
+                              document.body.appendChild(script);
+                          }
+                      },
+                      "Info Mode Preview"
+                  );
+              } else {
+                  // Berjalan di luar iframe (Local File), fitur print jalan normal (Vector 100%)
+                  window.print();
+              }
+          }, [projectName, showAlert, showConfirm, setIsPrinting]);
 
           // FUNGSI SCREENSHOT
           const handleScreenshot = useCallback(() => {
@@ -903,7 +955,7 @@
                   const element = document.getElementById('printable-report');
                   if (!element) { setIsTakingScreenshot(false); return; }
 
-                  // Ekspansi sementara area scroll agar tidak terpotong
+                  // Ekspansi sementara area scroll agar tidak terpotong (Karena html2canvas tidak baca @media print)
                   const scrollableElements = element.querySelectorAll('.max-h-80, .overflow-y-auto, .max-h-64, .custom-scroll, .max-h-\\[500px\\]');
                   const originalStyles = [];
                   scrollableElements.forEach(el => {
@@ -912,7 +964,7 @@
                       el.style.overflowY = 'visible';
                   });
 
-                  window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#f4f4f5', scrollY: -window.scrollY }).then(canvas => {
+                  window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: -window.scrollY }).then(canvas => {
                       // Kembalikan style seperti semula
                       originalStyles.forEach(({ el, maxHeight, overflowY }) => {
                           el.style.maxHeight = maxHeight;
@@ -949,72 +1001,77 @@
               }
           }, [projectName, showAlert]);
 
-
           const handleExportExcel = useCallback(() => {
             setIsExportingExcel(true);
             const generateXLSX = () => {
               try {
-                const wsData = [];
                 const borderAll = { top: { style: "thin", color: { rgb: "000000" } }, bottom: { style: "thin", color: { rgb: "000000" } }, left: { style: "thin", color: { rgb: "000000" } }, right: { style: "thin", color: { rgb: "000000" } } };
                 const styleHeader = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "27272A" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll };
                 const styleDataText = { alignment: { horizontal: "left", vertical: "center" }, border: borderAll };
                 const styleDataNumber = { alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
                 const styleDataNumberBold = { font: { bold: true }, alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
-                const styleTitle = { font: { bold: true, sz: 14 } }; const styleSubtitle = { font: { bold: true, sz: 11 } }; const styleBold = { font: { bold: true } }; const emptyBorder = { border: borderAll };
+                const styleTitle = { font: { bold: true, sz: 14 } }; const styleSubtitle = { font: { bold: true, sz: 12, color: { rgb: "27272A" } } }; const styleBold = { font: { bold: true } }; const emptyBorder = { border: borderAll };
                 const c = (v, s) => ({ v: v !== undefined && v !== null ? v : "", t: typeof v === 'number' ? 'n' : 's', s });
 
-                wsData.push([c("LAPORAN PROGRAM RUANG, INTENSITAS LAHAN, & PARKIR", styleTitle)]); wsData.push([]);
-                wsData.push([c("INFORMASI PROYEK", styleSubtitle)]);
-                wsData.push([c("Nama Proyek", styleBold), c(projectName || '-')]);
-                wsData.push([c("Lokasi", styleBold), c(projectLocation || '-')]); wsData.push([]);
+                const wb = window.XLSX.utils.book_new();
 
-                wsData.push([c("PERHITUNGAN INTENSITAS LAHAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
-                wsData.push([c("Luas Lahan", styleDataText), c(Number(landArea), styleDataNumber), c("m²", styleDataNumber)]);
-                wsData.push([c(`KDB (Maks. ${kdbLimit}%)`, styleDataText), c(Number(stats.currentKDB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
-                wsData.push([c(`KTB (Maks. ${ktbLimit}%)`, styleDataText), c(Number(stats.currentKTB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
-                wsData.push([c(`KDH (Min. ${kdhLimit}%)`, styleDataText), c(Number(stats.minRequiredKDHArea.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
-                wsData.push([c(`KLB (Maks. ${klbLimit})`, styleDataText), c(Number(stats.currentKLB.toFixed(2)), styleDataNumber), c("", styleDataNumber)]); wsData.push([]);
+                // ================= SHEET 1: REKAP KAWASAN =================
+                const wsSummaryData = [];
+                wsSummaryData.push([c("LAPORAN PROGRAM RUANG, INTENSITAS LAHAN, & PARKIR", styleTitle)]); wsSummaryData.push([]);
+                wsSummaryData.push([c("INFORMASI PROYEK", styleSubtitle)]);
+                wsSummaryData.push([c("Nama Proyek", styleBold), c(projectName || '-')]);
+                wsSummaryData.push([c("Lokasi", styleBold), c(projectLocation || '-')]); wsSummaryData.push([]);
 
-                wsData.push([c("LUAS BANGUNAN & PENGHUNI", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
-                wsData.push([c("Total Luas Netto", styleDataText), c(Number(stats.nettoTotal.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
-                wsData.push([c("Add. Factors (Akumulasi)", styleDataText), c(Number(Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
-                wsData.push([c("TOTAL GFA", { ...styleDataText, font: { bold: true } }), c(Number(stats.brutoTotal.toFixed(2)), styleDataNumberBold), c("m²", styleDataNumberBold)]);
-                wsData.push([c("Total Kapasitas Penghuni", styleDataText), c(Number(stats.occupantsTotal), styleDataNumber), c("Orang", styleDataNumber)]);
+                wsSummaryData.push([c("PERHITUNGAN INTENSITAS LAHAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
+                wsSummaryData.push([c("Luas Lahan", styleDataText), c(Number(landArea), styleDataNumber), c("m²", styleDataNumber)]);
+                wsSummaryData.push([c(`KDB (Maks. ${kdbLimit}%)`, styleDataText), c(Number(stats.currentKDB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
+                wsSummaryData.push([c(`KTB (Maks. ${ktbLimit}%)`, styleDataText), c(Number(stats.currentKTB.toFixed(2)), styleDataNumber), c("%", styleDataNumber)]);
+                wsSummaryData.push([c(`KDH (Min. ${kdhLimit}%)`, styleDataText), c(Number(stats.minRequiredKDHArea.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsSummaryData.push([c(`KLB (Maks. ${klbLimit})`, styleDataText), c(Number(stats.currentKLB.toFixed(2)), styleDataNumber), c("", styleDataNumber)]); wsSummaryData.push([]);
+
+                wsSummaryData.push([c("LUAS BANGUNAN & PENGHUNI KAWASAN", styleHeader), c("Nilai", styleHeader), c("Satuan", styleHeader)]);
+                wsSummaryData.push([c("Total Luas Netto", styleDataText), c(Number(stats.nettoTotal.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsSummaryData.push([c("Add. Factors (Akumulasi)", styleDataText), c(Number(Object.values(stats.factorAreas).reduce((a, b) => a + b, 0).toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]);
+                wsSummaryData.push([c("TOTAL GFA", { ...styleDataText, font: { bold: true } }), c(Number(stats.brutoTotal.toFixed(2)), styleDataNumberBold), c("m²", styleDataNumberBold)]);
+                wsSummaryData.push([c("Total Kapasitas Penghuni", styleDataText), c(Number(stats.occupantsTotal), styleDataNumber), c("Orang", styleDataNumber)]);
                 const sisaKuotaKLB = stats.maxAllowedKLBArea - stats.brutoTotal;
-                wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]); wsData.push([]);
+                wsSummaryData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]); wsSummaryData.push([]);
 
-                // Tabel Parkir Keseluruhan
-                wsData.push([c("KEBUTUHAN PARKIR (KESELURUHAN)", styleSubtitle)]); 
-                wsData.push([c("Aturan Parkir", styleHeader), c("Basis", styleHeader), c("Kendaraan", styleHeader), c("Jml Dibutuhkan", styleHeader), c("Est. Luas", styleHeader)]);
+                wsSummaryData.push([c("KEBUTUHAN PARKIR (KESELURUHAN)", styleSubtitle)]); 
+                wsSummaryData.push([c("Aturan Parkir", styleHeader), c("Basis", styleHeader), c("Kendaraan", styleHeader), c("Jml Dibutuhkan", styleHeader), c("Est. Luas", styleHeader)]);
                 stats.parkingStats.details.forEach(pr => {
-                    wsData.push([c(`${pr.name} (${pr.ruleDesc})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
+                    wsSummaryData.push([c(`${pr.name} (${pr.ruleDesc})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
                 });
-                wsData.push([c("TOTAL KEBUTUHAN LAHAN PARKIR", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.totalArea} m²`, styleDataNumberBold)]);
-                wsData.push([c("Sisa Lahan Permukaan (Di luar KDB)", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.remainingSurfaceArea.toFixed(1)} m²`, styleDataNumberBold)]);
-                wsData.push([]);
+                wsSummaryData.push([c("TOTAL KEBUTUHAN LAHAN PARKIR", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.totalArea} m²`, styleDataNumberBold)]);
+                wsSummaryData.push([c("Sisa Lahan Permukaan (Di luar KDB)", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.remainingSurfaceArea.toFixed(1)} m²`, styleDataNumberBold)]);
+                
+                const wsSummary = window.XLSX.utils.aoa_to_sheet(wsSummaryData);
+                wsSummary['!cols'] = [ { wch: 35 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 18 } ];
+                window.XLSX.utils.book_append_sheet(wb, wsSummary, "Rekap Kawasan");
 
-                stats.buildingDetails.forEach(b => {
-                   const styleBuildingHeader = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "3F3F46" } }, alignment: { vertical: "center", horizontal: "left" }, border: borderAll };
-                   // Judul Gedung diberi background gelap agar terlihat seperti Header pemisah
-                   wsData.push([c(` RINCIAN: ${b.name.toUpperCase()}`, styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader)]);
+                // ================= SHEET 2..N: RINCIAN PER GEDUNG =================
+                stats.buildingDetails.forEach((b, idx) => {
+                   const wsBData = [];
                    
-                   if (b.notes && b.notes.trim() !== '') wsData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "52525B" } } })]);
+                   wsBData.push([c(`RINCIAN GEDUNG: ${b.name.toUpperCase()}`, styleTitle)]);
+                   if (b.notes && b.notes.trim() !== '') wsBData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "52525B" } } })]);
+                   wsBData.push([]);
                    
-                   // Perhitungan Parkir Spesifik Gedung ini di Excel
                    if (b.parkingStats && b.parkingStats.details.length > 0) {
-                       wsData.push([c("Estimasi Kebutuhan Parkir Gedung", { font: { bold: true, color: { rgb: "52525B" } }, fill: { fgColor: { rgb: "F4F4F5" } } }), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }})]);
-                       wsData.push([c("Aturan", styleDataText), c("Basis", styleDataText), c("Kendaraan", styleDataText), c("Jml", styleDataText), c("Luas", styleDataText)]);
+                       wsBData.push([c("Estimasi Kebutuhan Parkir Gedung", { font: { bold: true, color: { rgb: "52525B" } }, fill: { fgColor: { rgb: "F4F4F5" } } }), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }})]);
+                       wsBData.push([c("Aturan", styleDataText), c("Basis", styleDataText), c("Kendaraan", styleDataText), c("Jml", styleDataText), c("Luas", styleDataText)]);
                        b.parkingStats.details.forEach(pr => {
-                           wsData.push([c(pr.name, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
+                           wsBData.push([c(pr.name, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
                        });
-                       wsData.push([c("Subtotal Parkir Gedung", styleBold), c("", emptyBorder), c("", emptyBorder), c(b.parkingStats.totalCount, styleDataNumberBold), c(`${b.parkingStats.totalArea} m²`, styleDataNumberBold)]);
+                       wsBData.push([c("Subtotal Parkir Gedung", styleBold), c("", emptyBorder), c("", emptyBorder), c(b.parkingStats.totalCount, styleDataNumberBold), c(`${b.parkingStats.totalArea} m²`, styleDataNumberBold)]);
+                       wsBData.push([]);
                    }
 
-                   wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jml Ruang", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Penghuni", styleHeader), c("Keterangan", styleHeader) ]);
+                   wsBData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jml Ruang", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Penghuni", styleHeader), c("Keterangan", styleHeader) ]);
 
                    b.floors.forEach(f => {
                       const floorHeaderFill = { fgColor: { rgb: "F4F4F5" } };
-                      wsData.push([ c(f.name, { ...styleDataText, font: { bold: true }, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }) ]);
+                      wsBData.push([ c(f.name, { ...styleDataText, font: { bold: true }, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }), c("", { border: borderAll, fill: floorHeaderFill }) ]);
                       
                       let floorRooms = rooms.filter(r => r.floorId === f.id);
                       if (reportSortBy === 'name') floorRooms = [...floorRooms].sort((a, b) => a.label.localeCompare(b.label));
@@ -1023,40 +1080,44 @@
                       floorRooms.forEach(room => {
                         const z = zones.find(z => z.id === room.zoneId) || zones[0];
                         const count = Number(room.count) || 0; const std = Number(room.std) || 0; const netto = count * std;
-                        wsData.push([ c("", styleDataText), c(room.label, styleDataText), c(z.label, styleDataNumber), c(count, styleDataNumber), c(std, styleDataNumber), c(Number(netto.toFixed(2)), styleDataNumberBold), c(room.occupants || "-", styleDataNumber), c(room.notes || "-", styleDataText) ]);
+                        wsBData.push([ c("", styleDataText), c(room.label, styleDataText), c(z.label, styleDataNumber), c(count, styleDataNumber), c(std, styleDataNumber), c(Number(netto.toFixed(2)), styleDataNumberBold), c(room.occupants || "-", styleDataNumber), c(room.notes || "-", styleDataText) ]);
                       });
 
                       factors.forEach(fac => {
                         const facValue = Number(f.factorValues?.[fac.id]) || 0; const facArea = (f.netto * facValue) / 100;
                         const z = zones.find(z => z.id === fac.zoneId);
                         if (facValue > 0) {
-                          wsData.push([ c("", styleDataText), c("", styleDataText), c(`+ ${fac.label} ${z ? `(→ ${z.label})` : ''}`, { ...styleDataText, font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } }), c(`${facValue}%`, { ...styleDataNumber, font: { italic: true } }), c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder), c("", emptyBorder) ]);
+                          wsBData.push([ c("", styleDataText), c("", styleDataText), c(`+ ${fac.label} ${z ? `(→ ${z.label})` : ''}`, { ...styleDataText, font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } }), c(`${facValue}%`, { ...styleDataNumber, font: { italic: true } }), c("", emptyBorder), c(Number(facArea.toFixed(2)), styleDataNumber), c("", emptyBorder), c("", emptyBorder) ]);
                         }
                       });
                       
-                      wsData.push([ c("", styleDataText), c(`Subtotal Netto ${f.name} (tanpa luasan faktor tambahan)`, { ...styleDataText, font: { bold: true } }), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(Number(f.netto.toFixed(2)), styleDataNumberBold), c(f.occupants, styleDataNumberBold), c("", emptyBorder) ]);
+                      wsBData.push([ c("", styleDataText), c(`Subtotal Netto ${f.name}`, { ...styleDataText, font: { bold: true } }), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(Number(f.netto.toFixed(2)), styleDataNumberBold), c(f.occupants, styleDataNumberBold), c("", emptyBorder) ]);
 
                       const floorTotalFill = { fgColor: { rgb: "E4E4E7" } };
-                      wsData.push([ c("", { border: borderAll, fill: floorTotalFill }), c(`TOTAL BRUTO ${f.name}`, { ...styleDataText, font: { bold: true }, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c(Number(f.bruto.toFixed(2)), { ...styleDataNumberBold, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }) ]);
+                      wsBData.push([ c("", { border: borderAll, fill: floorTotalFill }), c(`TOTAL BRUTO ${f.name}`, { ...styleDataText, font: { bold: true }, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c(Number(f.bruto.toFixed(2)), { ...styleDataNumberBold, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }) ]);
                    });
 
                    const buildingTotalFill = { fgColor: { rgb: "27272A" } };
                    const styleBuildingTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
                    const styleBuildingTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
-                   wsData.push([ c("", { border: borderAll, fill: buildingTotalFill }), c(`TOTAL GFA & PENGHUNI ${b.name.toUpperCase()}`, styleBuildingTotalText), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber), c(b.occupants, styleBuildingTotalNumber), c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E4E4E7" }, italic: true }, fill: buildingTotalFill, border: borderAll }) ]);
-                   wsData.push([]); // Jeda antar gedung saja
+                   wsBData.push([ c("", { border: borderAll, fill: buildingTotalFill }), c(`TOTAL GFA & PENGHUNI ${b.name.toUpperCase()}`, styleBuildingTotalText), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber), c(b.occupants, styleBuildingTotalNumber), c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E4E4E7" }, italic: true }, fill: buildingTotalFill, border: borderAll }) ]);
+                   
+                   const wsB = window.XLSX.utils.aoa_to_sheet(wsBData);
+                   wsB['!cols'] = [ { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 40 } ];
+                   
+                   // Pastikan nama sheet unik & valid (max 31 char)
+                   let sheetName = b.name.substring(0, 31).replace(/[\\/?*\[\]:]/g, '');
+                   // Kalo kembar atau kosong
+                   if (!sheetName) sheetName = `Gedung ${idx + 1}`;
+                   
+                   try {
+                      window.XLSX.utils.book_append_sheet(wb, wsB, sheetName);
+                   } catch(e) {
+                      // If duplicate name or error, fallback to index
+                      window.XLSX.utils.book_append_sheet(wb, wsB, `Gedung_${idx + 1}`);
+                   }
                 });
 
-                const grandTotalFill = { fgColor: { rgb: "18181B" } };
-                const styleGrandTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
-                const styleGrandTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: grandTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
-
-                wsData.push([ c("", { border: borderAll, fill: grandTotalFill }), c("TOTAL GFA KAWASAN", styleGrandTotalText), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }), c(Number(stats.brutoTotal.toFixed(2)), styleGrandTotalNumber), c("", { border: borderAll, fill: grandTotalFill }), c("", { border: borderAll, fill: grandTotalFill }) ]);
-                wsData.push([]);
-
-                const wb = window.XLSX.utils.book_new(); const ws = window.XLSX.utils.aoa_to_sheet(wsData);
-                ws['!cols'] = [ { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 40 } ];
-                window.XLSX.utils.book_append_sheet(wb, ws, "Program Ruang");
                 window.XLSX.writeFile(wb, `${(projectName || 'Laporan').replace(/\s+/g, '_')}.xlsx`);
               } catch (error) { console.error("Export failed:", error); showAlert("Terjadi kesalahan saat mengekspor Excel.", "Error"); } 
               finally { setIsExportingExcel(false); }
@@ -1193,13 +1254,13 @@
                             {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel'}
                           </button>
                       )}
-                      {/* SCREENSHOT BUTTON */}
+                      
                       <button onClick={handleScreenshot} disabled={isTakingScreenshot} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isTakingScreenshot ? 'bg-blue-400 text-white cursor-wait' : 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50'}`}>
                         {Camera && <Camera className={`w-4 h-4 ${isTakingScreenshot ? 'animate-pulse' : ''}`} />} {isTakingScreenshot ? 'Memproses...' : 'Screenshot (PNG)'}
                       </button>
 
                       <button onClick={handlePrintPDF} disabled={isPrinting} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isPrinting ? 'bg-zinc-400 text-white cursor-wait' : 'bg-zinc-800 text-white hover:bg-zinc-900'}`}>
-                        {Printer && <Printer className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />} {isPrinting ? 'Memproses...' : 'Cetak PDF'}
+                        {Printer && <Printer className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />} {isPrinting ? 'Memproses...' : 'Cetak PDF (Vector)'}
                       </button>
                     </div>
                   )}
@@ -1504,10 +1565,10 @@
                     </div>
                 )}
 
+                {/* TAB INPUT VIEW */}
                 {activeTab === 'input' && (
                   <div className="space-y-6">
                     
-                    {/* PROGRESSIVE DISCLOSURE: Parameter Lahan */}
                     <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden transition-all">
                       <button 
                         onClick={() => setShowProjectParams(!showProjectParams)} 
@@ -1724,7 +1785,6 @@
                                       </div>
                                   </div>
                                   
-                                  {/* PENAMBAHAN FITUR: CATATAN/KETERANGAN GEDUNG */}
                                   <div className="w-full pt-2 border-t border-zinc-200/60 mt-2">
                                       <div className="flex justify-between items-center mb-1.5">
                                           <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block">Catatan / Spesifikasi Gedung (Opsional)</label>
@@ -2219,7 +2279,7 @@
                                         );
                                         })}
                                         <tr className="text-[10px] bg-zinc-50 text-zinc-600 font-bold border border-zinc-300 print:border-black print:bg-white print:text-black">
-                                        <td colSpan={4} className="py-2.5 px-4 text-right uppercase border-r border-zinc-300 print:border-black">Subtotal Netto {f.name} <span className="normal-case italic opacity-75">(Tanpa Add. Factors)</span></td>
+                                        <td colSpan={4} className="py-2.5 px-4 text-right uppercase border-r border-zinc-300 print:border-black">Subtotal Netto {f.name} <span className="normalcase italic opacity-75">(Tanpa Add. Factors)</span></td>
                                         <td className="py-2.5 px-4 text-center font-mono font-black border-r border-zinc-300 print:border-black">{f.netto.toFixed(1)} m²</td>
                                         <td className="py-2.5 px-4 text-center font-mono font-black border-r border-zinc-300 print:border-black">{f.occupants} <span className="text-[9px] font-sans font-medium normal-case">org</span></td>
                                         <td></td>
