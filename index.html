@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Schematic Space Planner Pro</title>
     
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -19,14 +20,15 @@
         }
     </script>
     
+    <!-- React & ReactDOM -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-    
     <script>
         window.react = window.React;
         globalThis.react = window.React;
     </script>
     
+    <!-- Babel & Lucide Icons -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" crossorigin></script>
     <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.344.0/dist/umd/lucide-react.min.js" crossorigin></script>
 
@@ -38,29 +40,29 @@
             -moz-osx-font-smoothing: grayscale;
             margin: 0;
             padding: 0;
-            background-color: #f4f4f5; /* Zinc 100 - more neutral */
+            background-color: #f4f4f5;
         }
-        #root {
-            width: 100%;
-            min-height: 100vh;
-        }
+        
+        #root { width: 100%; min-height: 100vh; }
+        
         #fallback-loading {
             display: flex; justify-content: center; align-items: center; 
             height: 100vh; font-family: sans-serif; font-weight: bold;
             background: #f4f4f5; color: #52525b;
         }
-        /* Custom Scrollbar for inner tables */
+
+        /* Custom Scrollbar */
         .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
-        /* Remove number input arrows for clean look */
+        /* Remove number input arrows */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
 
-        /* Mencegah input berubah putih/kuning setelah memilih Auto Suggestion di Chrome */
+        /* Fix Chrome Autofill Background */
         input:-webkit-autofill,
         input:-webkit-autofill:hover, 
         input:-webkit-autofill:focus, 
@@ -69,17 +71,14 @@
             -webkit-text-fill-color: #27272a !important;
         }
 
-        /* Optimasi Tampilan Cetak (Print/PDF) */
+        /* Print Optimization */
         @media print {
             body {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 background-color: white !important;
             }
-            .break-inside-avoid {
-                break-inside: avoid;
-            }
-            /* Memaksa semua kontainer scroll untuk terekspansi ke bawah penuh */
+            .break-inside-avoid { break-inside: avoid; }
             .custom-scroll, .overflow-y-auto, [class*="max-h-"] {
                 max-height: none !important;
                 height: auto !important;
@@ -97,6 +96,7 @@
     <script type="text/babel" data-presets="react">
         const { useState, useMemo, useEffect, useCallback, useRef } = window.React;
         
+        // --- ICON EXTRACTS ---
         const lucide = window.lucideReact || window.LucideReact || {};
         const {
             Users, Layout, Settings, Calculator, FileText, Plus, Trash2, Info,
@@ -105,9 +105,8 @@
             Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
             MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
             Building, FilePlus, Sparkles, Loader2, MoveRight, Car, ParkingCircle, Bus, Bike, Maximize2, Minimize2,
-            Camera // Ditambahkan untuk ikon Screenshot
+            Camera, Map: MapIcon
         } = lucide;
-        const MapIcon = lucide.Map; 
 
         // --- GEMINI API CONFIGURATION ---
         const apiKey = ""; 
@@ -131,22 +130,24 @@
             }
         };
 
+        // --- ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
-          constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-          static getDerivedStateFromError(error) { return { hasError: true, error }; }
-          render() {
-            if (this.state.hasError) {
-              return (
-                <div className="p-8 text-rose-600 bg-rose-50 min-h-screen font-mono">
-                  <h1 className="text-2xl font-bold mb-4">Ups! Terjadi Kesalahan Render.</h1>
-                  <pre className="bg-white p-4 rounded border border-rose-200 overflow-auto text-sm">{this.state.error.toString()}</pre>
-                </div>
-              );
+            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-8 text-rose-600 bg-rose-50 min-h-screen font-mono">
+                            <h1 className="text-2xl font-bold mb-4">Ups! Terjadi Kesalahan Render.</h1>
+                            <pre className="bg-white p-4 rounded border border-rose-200 overflow-auto text-sm">{this.state.error.toString()}</pre>
+                        </div>
+                    );
+                }
+                return this.props.children;
             }
-            return this.props.children;
-          }
         }
 
+        // --- CONSTANTS ---
         const ZONE_COLORS = [
           { id: 'blue', color: 'bg-blue-100 text-blue-700', border: 'border-blue-200' },
           { id: 'emerald', color: 'bg-emerald-100 text-emerald-700', border: 'border-emerald-200' },
@@ -157,16 +158,10 @@
           { id: 'slate', color: 'bg-slate-100 text-slate-700', border: 'border-slate-200' },
         ];
 
-        // Safe tailwind bg-colors for Treemap rendering
         const getTreemapBgClass = (colorId) => {
             const map = {
-                'blue': 'bg-blue-500',
-                'emerald': 'bg-emerald-500',
-                'purple': 'bg-purple-500',
-                'amber': 'bg-amber-500',
-                'rose': 'bg-rose-500',
-                'indigo': 'bg-indigo-500',
-                'slate': 'bg-slate-500'
+                'blue': 'bg-blue-500', 'emerald': 'bg-emerald-500', 'purple': 'bg-purple-500',
+                'amber': 'bg-amber-500', 'rose': 'bg-rose-500', 'indigo': 'bg-indigo-500', 'slate': 'bg-slate-500'
             };
             return map[colorId] || 'bg-zinc-500';
         };
@@ -220,7 +215,7 @@
                   parsed.parkingRules = parsed.parkingRules.map(pr => {
                       if (pr.targetZoneId !== undefined) { pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : []; delete pr.targetZoneId; }
                       if (!pr.targetZoneIds) pr.targetZoneIds = [];
-                      if (!pr.calcMethod) pr.calcMethod = 'ratio'; // Migrate legacy parking rules
+                      if (!pr.calcMethod) pr.calcMethod = 'ratio';
                       return pr;
                   });
                   return parsed;
@@ -230,6 +225,7 @@
           return INITIAL_APP_STATE;
         };
 
+        // --- CUSTOM HOOKS ---
         const useUndoableState = (initialState) => {
           const [state, setState] = useState(initialState);
           const [past, setPast] = useState([]);
@@ -260,12 +256,14 @@
           return [state, set, undo, redo, past.length > 0, future.length > 0];
         };
 
+        // --- MAIN APP COMPONENT ---
         const App = () => {
           const [appState, setAppState, undo, redo, canUndo, canRedo] = useUndoableState(getSavedState);
           
           const { projectName, projectLocation, landArea, kdbLimit, ktbLimit, kdhLimit, klbLimit, maxFloorsLimit, factors, zones, buildings, floors, rooms } = appState;
           const parkingRules = appState.parkingRules || INITIAL_APP_STATE.parkingRules;
 
+          // State Setters
           const setProjectName = (val) => setAppState(prev => ({ ...prev, projectName: typeof val === 'function' ? val(prev.projectName) : val }));
           const setProjectLocation = (val) => setAppState(prev => ({ ...prev, projectLocation: typeof val === 'function' ? val(prev.projectLocation) : val }));
           const setLandArea = (val) => setAppState(prev => ({ ...prev, landArea: typeof val === 'function' ? val(prev.landArea) : val }));
@@ -284,8 +282,9 @@
           const [activeBuildingId, setActiveBuildingId] = useState(buildings[0]?.id || null);
           const [showZoneManager, setShowZoneManager] = useState(false);
           const [showFactorManager, setShowFactorManager] = useState(false);
-          const [lastActiveFloorId, setLastActiveFloorId] = useState(null);
           const [collapsedFloors, setCollapsedFloors] = useState({});
+          
+          // Drag States
           const [draggedFloorIdx, setDraggedFloorIdx] = useState(null);
           const [dragOverFloorIdx, setDragOverFloorIdx] = useState(null);
           const [draggedBuildingIdx, setDraggedBuildingIdx] = useState(null);
@@ -293,33 +292,29 @@
           const [draggedRoomId, setDraggedRoomId] = useState(null);
           const [dragOverRoomId, setDragOverRoomId] = useState(null);
           
-          // Modals untuk Ruangan
+          // Modals
           const [moveModal, setMoveModal] = useState({ isOpen: false, targetFloorId: '' });
           const [copyRoomModal, setCopyRoomModal] = useState({ isOpen: false, targetFloorId: '' });
-          
-          // Modals untuk Lantai
           const [duplicateModal, setDuplicateModal] = useState({ isOpen: false, floorId: null, targetBuildingId: '', count: 1 });
           const [moveFloorModal, setMoveFloorModal] = useState({ isOpen: false, floorId: null, targetBuildingId: '' });
-
-          // Modals untuk Gedung
           const [duplicateBuildingModal, setDuplicateBuildingModal] = useState({ isOpen: false, buildingId: null, count: 1 });
-          
+          const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+
+          // Features States
           const [selectedRoomIds, setSelectedRoomIds] = useState([]);
           const [reportSortBy, setReportSortBy] = useState('default');
           const [isExportingExcel, setIsExportingExcel] = useState(false);
           const [isPrinting, setIsPrinting] = useState(false);
-          const [isTakingScreenshot, setIsTakingScreenshot] = useState(false); // State untuk Screenshot
+          const [isTakingScreenshot, setIsTakingScreenshot] = useState(false);
           const [isAutosaving, setIsAutosaving] = useState(false);
           const [aiLoadingState, setAiLoadingState] = useState({});
-          const [visualMode, setVisualMode] = useState('square'); // State Toggle Visual
-          
+          const [visualMode, setVisualMode] = useState('square');
           const [activeRowId, setActiveRowId] = useState(null);
-          const [dialog, setDialog] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+          const fileInputRef = useRef(null);
 
-          // Auto-Suggestion State Management
+          // --- AUTO SUGGESTIONS ---
           const roomsRef = useRef(rooms);
           useEffect(() => { roomsRef.current = rooms; }, [rooms]);
-
           const [suggestions, setSuggestions] = useState({ names: [], notes: [] });
 
           const updateSuggestions = useCallback(() => {
@@ -329,12 +324,11 @@
                   notes: Array.from(new Set(reversedRooms.map(r => r.notes).filter(n => n && n.trim() !== '')))
               });
           }, []);
-
           useEffect(() => { updateSuggestions(); }, [rooms.length, updateSuggestions]);
 
+          // --- HELPER FUNCTIONS ---
           const showAlert = useCallback((message, title = "Informasi") => setDialog({ isOpen: true, title, message, type: 'alert', onConfirm: null }), []);
           const showConfirm = useCallback((message, onConfirm, title = "Konfirmasi") => setDialog({ isOpen: true, title, message, type: 'confirm', onConfirm }), []);
-          const fileInputRef = useRef(null);
           const getZoneStyle = (colorId) => ZONE_COLORS.find(c => c.id === colorId) || ZONE_COLORS[0];
 
           useEffect(() => {
@@ -342,6 +336,7 @@
             else if (activeBuildingId && !buildings.find(b => b.id === activeBuildingId)) setActiveBuildingId(buildings[0]?.id || null);
           }, [buildings, activeBuildingId]);
 
+          // Autosave
           useEffect(() => {
             const timeoutId = setTimeout(() => {
               try { localStorage.setItem('spacePlannerState', JSON.stringify(appState)); setIsAutosaving(true); setTimeout(() => setIsAutosaving(false), 2000); } catch (e) { console.error("Autosave gagal", e); }
@@ -349,6 +344,7 @@
             return () => clearTimeout(timeoutId);
           }, [appState]);
 
+          // --- CORE CALCULATION ENGINE ---
           const stats = useMemo(() => {
             const safeNum = (val) => Number(val) || 0;
             const lArea = safeNum(landArea);
@@ -380,7 +376,6 @@
               const brutoFloor = nettoFloor * (1 + totalMultiplier / 100);
               globalNettoTotal += nettoFloor; globalBrutoTotal += brutoFloor; globalOccupantsTotal += occupantsFloor;
               
-              // NEW FEATURE: Menghitung Rincian Zone per LANTAI (Untuk Treemap)
               const fZoneBreakdown = zones.map(z => {
                 let zNettoArea = 0;
                 rooms.filter(r => r.floorId === f.id && r.zoneId === z.id).forEach(r => {
@@ -395,7 +390,6 @@
                 }
                 let zBrutoArea = zNettoArea * (1 + globalZoneMultiplier / 100);
                 
-                // Tambahkan specific zone factor ke total bruto area untuk zona ini
                 factors.filter(fac => fac.zoneId === z.id).forEach(fac => {
                   zBrutoArea += (nettoFloor * safeNum(f.factorValues?.[fac.id])) / 100;
                 });
@@ -434,7 +428,6 @@
                 return { id: z.id, name: z.label, area: zNettoArea, brutoArea: zBrutoArea, style: getZoneStyle(z.colorId) };
               });
 
-              // PERHITUNGAN PARKIR SPESIFIK PER GEDUNG
               const bParkingStats = {
                   totalArea: 0,
                   totalCount: 0,
@@ -454,11 +447,8 @@
                       }
 
                       let count = 0;
-                      if (rule.calcMethod === 'percentage') {
-                          count = Math.ceil(baseValue * (rule.ratio / 100));
-                      } else {
-                          count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
-                      }
+                      if (rule.calcMethod === 'percentage') count = Math.ceil(baseValue * (rule.ratio / 100));
+                      else count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
 
                       const area = count * rule.areaPerVehicle;
                       const ruleDesc = rule.calcMethod === 'percentage' ? `${rule.ratio}%` : `1 per ${rule.ratio}`;
@@ -496,7 +486,6 @@
               return { id: z.id, name: z.label, area: nettoArea, brutoArea: brutoArea, style: getZoneStyle(z.colorId) };
             });
 
-            // GLOBAL PARKING STATS (Dihitung dari kawasan total)
             const parkingStats = {
                 totalArea: 0,
                 totalCount: 0,
@@ -516,11 +505,8 @@
                     }
 
                     let count = 0;
-                    if (rule.calcMethod === 'percentage') {
-                        count = Math.ceil(baseValue * (rule.ratio / 100));
-                    } else {
-                        count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
-                    }
+                    if (rule.calcMethod === 'percentage') count = Math.ceil(baseValue * (rule.ratio / 100));
+                    else count = rule.ratio > 0 ? Math.ceil(baseValue / rule.ratio) : 0;
 
                     const area = count * rule.areaPerVehicle;
                     const ruleDesc = rule.calcMethod === 'percentage' ? `${rule.ratio}%` : `1 per ${rule.ratio}`;
@@ -538,7 +524,7 @@
             };
           }, [rooms, floors, buildings, zones, factors, parkingRules, landArea, ktbLimit, kdhLimit, klbLimit, kdbLimit]);
 
-          // ACTIONS
+          // --- ACTION HANDLERS ---
           const handleNewProject = useCallback(() => {
             showConfirm("Mulai proyek baru? Pastikan sudah disimpan.", () => { setAppState(INITIAL_APP_STATE); setActiveBuildingId(INITIAL_APP_STATE.buildings[0].id); setCollapsedFloors({}); localStorage.removeItem('spacePlannerState'); }, "Buat Proyek Baru");
           }, [setAppState, showConfirm]);
@@ -550,6 +536,7 @@
           };
 
           const updateBuilding = (id, field, value) => setAppState(prev => ({ ...prev, buildings: prev.buildings.map(b => b.id === id ? { ...b, [field]: value } : b) }));
+          
           const removeBuilding = (id) => {
             if (buildings.length <= 1) { showAlert("Min. 1 Gedung.", "Gagal Menghapus"); return; }
             showConfirm("Hapus gedung beserta seluruh isinya?", () => {
@@ -567,6 +554,7 @@
           const removeFactor = (id) => setFactors(prev => prev.filter(fac => fac.id !== id));
           const updateFactor = (id, field, value) => setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, [field]: value } : fac));
           const updateFactorDefault = (id, defaultVal) => setFactors(prev => prev.map(fac => fac.id === id ? { ...fac, defaultVal: Number(defaultVal) } : fac));
+          
           const applyFactorToAllFloors = (factorId) => {
             const factor = factors.find(f => f.id === factorId); if (!factor) return;
             showConfirm(`Terapkan ${factor.defaultVal}% ke SEMUA lantai?`, () => { setAppState(prev => ({ ...prev, floors: prev.floors.map(f => ({ ...f, factorValues: { ...f.factorValues, [factorId]: factor.defaultVal } })) })); });
@@ -633,6 +621,7 @@
             }));
           };
 
+          // --- MODAL CONFIRMATION HANDLERS ---
           const confirmMoveFloor = () => {
               const { floorId, targetBuildingId } = moveFloorModal;
               if (!floorId || !targetBuildingId) return;
@@ -718,6 +707,7 @@
             setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 });
           };
 
+          // --- ROOM HANDLERS ---
           const addRoom = useCallback((fId) => {
             const newRoomId = Math.random().toString(36).substr(2, 9);
             setAppState(prev => ({ ...prev, rooms: [...prev.rooms, { id: newRoomId, label: '', floorId: fId, zoneId: prev.zones[0]?.id || 'z1', count: 1, std: '', notes: '', occupants: '' }] }));
@@ -778,6 +768,8 @@
           }, [setAppState]);
 
           const toggleFloorCollapse = (floorId) => setCollapsedFloors(prev => ({ ...prev, [floorId]: !prev[floorId] }));
+          
+          // --- DRAG AND DROP HANDLERS ---
           const handleDragStart = (e, idx) => { setDraggedFloorIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', idx); };
           const handleDragOver = (e, idx) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverFloorIdx !== idx) setDragOverFloorIdx(idx); };
           const handleDrop = (e, targetIdx) => {
@@ -828,19 +820,14 @@
           };
           const handleRoomDragEnd = () => { setDraggedRoomId(null); setDragOverRoomId(null); };
 
-          // Keyboard Grid Navigation
+          // --- KEYBOARD GRID NAVIGATION ---
           const handleRoomGridNav = (e, floorId, roomId, colName) => {
             if (e.key === 'Enter') {
                 if (colName === 'name' || colName === 'notes') { e.preventDefault(); addRoom(floorId); }
                 return;
             }
-            
             if (['ArrowUp', 'ArrowDown'].includes(e.key) || (e.ctrlKey && ['ArrowLeft', 'ArrowRight'].includes(e.key))) {
-                
-                if (['ArrowUp', 'ArrowDown'].includes(e.key) && (colName === 'name' || colName === 'notes')) {
-                    return; 
-                }
-
+                if (['ArrowUp', 'ArrowDown'].includes(e.key) && (colName === 'name' || colName === 'notes')) return; 
                 e.preventDefault();
                 const cols = ['zone', 'name', 'count', 'std', 'occupants', 'notes'];
                 const floorRooms = rooms.filter(r => r.floorId === floorId);
@@ -848,7 +835,6 @@
                 const cIdx = cols.indexOf(colName);
                 
                 let nextRIdx = rIdx; let nextCIdx = cIdx;
-                
                 if (e.key === 'ArrowUp') nextRIdx = Math.max(0, rIdx - 1);
                 if (e.key === 'ArrowDown') nextRIdx = Math.min(floorRooms.length - 1, rIdx + 1);
                 if (e.key === 'ArrowLeft' && e.ctrlKey) nextCIdx = Math.max(0, cIdx - 1);
@@ -858,10 +844,7 @@
                     const nextRoomId = floorRooms[nextRIdx].id;
                     const nextCol = cols[nextCIdx];
                     const el = document.querySelector(`[data-grid-id="${nextRoomId}-${nextCol}"]`);
-                    if (el) {
-                        el.focus();
-                        if (typeof el.select === 'function') el.select();
-                    }
+                    if (el) { el.focus(); if (typeof el.select === 'function') el.select(); }
                 }
             }
           };
@@ -879,7 +862,7 @@
             return () => window.removeEventListener('keydown', handleKeyDown);
           }, [activeTab, undo, redo, addFloor]);
 
-          // SAVE / LOAD / EXPORT
+          // --- SAVE / LOAD / EXPORT HANDLERS ---
           const handleSaveProject = useCallback(async () => {
             const dataStr = JSON.stringify(appState, null, 2);
             const defaultFileName = `${(projectName || 'Proyek_Tanpa_Nama').replace(/\s+/g, '_')}.json`;
@@ -922,6 +905,7 @@
             reader.readAsText(file); e.target.value = null;
           }, [setAppState, showAlert]);
 
+          // --- GEMINI AI INTEGRATION ---
           const handleEnhanceBuildingNote = async (buildingId, buildingName, currentNote) => {
               setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: true }));
               try {
@@ -933,10 +917,9 @@
               finally { setAiLoadingState(prev => ({ ...prev, [`building_note_${buildingId}`]: false })); }
           };
 
-          // FUNGSI PRINT PDF (VECTOR & RASTER FALLBACK)
+          // --- EXPORT PDF / PNG / EXCEL ---
           const handlePrintPDF = useCallback(() => {
               if (window.self !== window.top) {
-                  // Jika di dalam iframe (Preview Canvas), window.print() biasanya diblokir.
                   showConfirm(
                       "Sistem keamanan mode Preview memblokir fitur Print otomatis browser.\n\n" +
                       "👉 UNTUK PDF VECTOR (Tajam & Bisa diblok): Buka/Save file HTML ini dan jalankan langsung di tab browser Anda (Local File), lalu klik tombol ini lagi atau tekan Ctrl+P.\n\n" +
@@ -947,29 +930,54 @@
                               const element = document.getElementById('printable-report');
                               if (!element) { setIsPrinting(false); return; }
                               
-                              // Ekspansi area scroll agar tidak terpotong
+                              // Simpan posisi scroll & paksa ke atas
+                              const originalScrollY = window.scrollY;
+                              const originalScrollX = window.scrollX;
+                              window.scrollTo(0, 0);
+
                               const scrollableElements = element.querySelectorAll('.max-h-80, .overflow-y-auto, .max-h-64, .custom-scroll, .max-h-\\[500px\\]');
                               const originalStyles = [];
                               scrollableElements.forEach(el => {
-                                  originalStyles.push({ el, maxHeight: el.style.maxHeight, overflowY: el.style.overflowY });
-                                  el.style.maxHeight = 'none'; el.style.overflowY = 'visible';
+                                  originalStyles.push({ el, maxHeight: el.style.maxHeight, overflowY: el.style.overflowY, height: el.style.height });
+                                  el.style.maxHeight = 'none';
+                                  el.style.height = 'auto';
+                                  el.style.overflowY = 'visible';
                               });
+
+                              // Paksa elemen ke tinggi maksimalnya
+                              const targetHeight = element.scrollHeight;
+                              const originalElementHeight = element.style.height;
+                              element.style.height = targetHeight + 'px';
 
                               const opt = {
                                   margin: 10, filename: `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}_Raster.pdf`,
                                   image: { type: 'jpeg', quality: 1.0 }, 
-                                  html2canvas: { scale: 2, useCORS: true, scrollY: -window.scrollY, backgroundColor: '#ffffff' }, 
+                                  html2canvas: { 
+                                      scale: 2, 
+                                      useCORS: true, 
+                                      scrollY: 0, 
+                                      scrollX: 0,
+                                      backgroundColor: '#ffffff',
+                                      height: targetHeight,
+                                      width: element.scrollWidth
+                                  }, 
                                   jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
                               };
                               
                               window.html2pdf().set(opt).from(element).save().then(() => {
-                                  originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                                  element.style.height = originalElementHeight;
+                                  window.scrollTo(originalScrollX, originalScrollY);
+                                  originalStyles.forEach(({ el, maxHeight, overflowY, height }) => {
                                       el.style.maxHeight = maxHeight; el.style.overflowY = overflowY;
+                                      if (height !== undefined) el.style.height = height;
                                   });
                                   setIsPrinting(false);
                               }).catch(err => {
-                                  originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                                  element.style.height = originalElementHeight;
+                                  window.scrollTo(originalScrollX, originalScrollY);
+                                  originalStyles.forEach(({ el, maxHeight, overflowY, height }) => {
                                       el.style.maxHeight = maxHeight; el.style.overflowY = overflowY;
+                                      if (height !== undefined) el.style.height = height;
                                   });
                                   setIsPrinting(false);
                                   showAlert("Gagal memproses PDF.", "Error");
@@ -987,32 +995,65 @@
                       "Info Mode Preview"
                   );
               } else {
-                  // Berjalan di luar iframe (Local File), fitur print jalan normal (Vector 100%)
                   window.print();
               }
           }, [projectName, showAlert, showConfirm]);
 
-          // FUNGSI SCREENSHOT
           const handleScreenshot = useCallback(() => {
               setIsTakingScreenshot(true);
               const takeShot = () => {
                   const element = document.getElementById('printable-report');
                   if (!element) { setIsTakingScreenshot(false); return; }
 
-                  // Ekspansi sementara area scroll agar tidak terpotong (Karena html2canvas tidak baca @media print)
+                  // --- FIX SCREENSHOT TERPOTONG ---
+                  // 1. Simpan posisi scroll saat ini
+                  const originalScrollY = window.scrollY;
+                  const originalScrollX = window.scrollX;
+                  // 2. Scroll paksa ke atas agar html2canvas membaca tinggi dokumen dari 0
+                  window.scrollTo(0, 0);
+
+                  // Ekspansi sementara area scroll internal agar semua list terlihat
                   const scrollableElements = element.querySelectorAll('.max-h-80, .overflow-y-auto, .max-h-64, .custom-scroll, .max-h-\\[500px\\]');
                   const originalStyles = [];
                   scrollableElements.forEach(el => {
-                      originalStyles.push({ el, maxHeight: el.style.maxHeight, overflowY: el.style.overflowY });
+                      originalStyles.push({ el, maxHeight: el.style.maxHeight, overflowY: el.style.overflowY, height: el.style.height });
                       el.style.maxHeight = 'none';
+                      el.style.height = 'auto';
                       el.style.overflowY = 'visible';
                   });
 
-                  window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: -window.scrollY }).then(canvas => {
-                      // Kembalikan style seperti semula
-                      originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                  // Modifikasi style window sementara agar ukurannya tidak dibatasi viewport
+                  const originalBodyHeight = document.body.style.height;
+                  const originalHtmlHeight = document.documentElement.style.height;
+                  document.body.style.height = 'auto';
+                  document.documentElement.style.height = 'auto';
+
+                  // Memaksa elemen utama untuk menyesuaikan tinggi penuhnya (Mencegah flex-wrap clipping)
+                  const targetHeight = element.scrollHeight;
+                  const originalElementHeight = element.style.height;
+                  element.style.height = targetHeight + 'px';
+
+                  window.html2canvas(element, { 
+                      scale: 2, 
+                      useCORS: true, 
+                      backgroundColor: '#ffffff', 
+                      scrollY: 0,
+                      scrollX: 0,
+                      windowWidth: document.documentElement.scrollWidth,
+                      windowHeight: document.documentElement.scrollHeight,
+                      height: targetHeight,
+                      width: element.scrollWidth
+                  }).then(canvas => {
+                      // Kembalikan semua style & posisi scroll seperti semula
+                      element.style.height = originalElementHeight;
+                      document.body.style.height = originalBodyHeight;
+                      document.documentElement.style.height = originalHtmlHeight;
+                      window.scrollTo(originalScrollX, originalScrollY);
+
+                      originalStyles.forEach(({ el, maxHeight, overflowY, height }) => {
                           el.style.maxHeight = maxHeight;
                           el.style.overflowY = overflowY;
+                          if (height !== undefined) el.style.height = height;
                       });
 
                       const image = canvas.toDataURL("image/png");
@@ -1023,10 +1064,16 @@
                       setIsTakingScreenshot(false);
                       showAlert("Screenshot berhasil disimpan.", "Berhasil");
                   }).catch(err => {
-                      // Kembalikan style jika error
-                      originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                      // Kembalikan style & scroll meskipun error
+                      element.style.height = originalElementHeight;
+                      document.body.style.height = originalBodyHeight;
+                      document.documentElement.style.height = originalHtmlHeight;
+                      window.scrollTo(originalScrollX, originalScrollY);
+
+                      originalStyles.forEach(({ el, maxHeight, overflowY, height }) => {
                           el.style.maxHeight = maxHeight;
                           el.style.overflowY = overflowY;
+                          if (height !== undefined) el.style.height = height;
                       });
                       console.error("Screenshot failed:", err);
                       setIsTakingScreenshot(false);
@@ -1034,9 +1081,7 @@
                   });
               };
 
-              if (window.html2canvas) {
-                  takeShot();
-              } else {
+              if (window.html2canvas) { takeShot(); } else {
                   const script = document.createElement('script');
                   script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
                   script.onload = takeShot;
@@ -1059,7 +1104,7 @@
 
                 const wb = window.XLSX.utils.book_new();
 
-                // ================= SHEET 1: REKAP KAWASAN =================
+                // SHEET 1: REKAP KAWASAN
                 const wsSummaryData = [];
                 wsSummaryData.push([c("LAPORAN PROGRAM RUANG, INTENSITAS LAHAN, & PARKIR", styleTitle)]); wsSummaryData.push([]);
                 wsSummaryData.push([c("INFORMASI PROYEK", styleSubtitle)]);
@@ -1093,10 +1138,9 @@
                 wsSummary['!cols'] = [ { wch: 35 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 18 } ];
                 window.XLSX.utils.book_append_sheet(wb, wsSummary, "Rekap Kawasan");
 
-                // ================= SHEET 2..N: RINCIAN PER GEDUNG =================
+                // SHEET 2..N: RINCIAN PER GEDUNG
                 stats.buildingDetails.forEach((b, idx) => {
                    const wsBData = [];
-                   
                    wsBData.push([c(`RINCIAN GEDUNG: ${b.name.toUpperCase()}`, styleTitle)]);
                    if (b.notes && b.notes.trim() !== '') wsBData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "52525B" } } })]);
                    wsBData.push([]);
@@ -1149,17 +1193,11 @@
                    const wsB = window.XLSX.utils.aoa_to_sheet(wsBData);
                    wsB['!cols'] = [ { wch: 18 }, { wch: 35 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 40 } ];
                    
-                   // Pastikan nama sheet unik & valid (max 31 char)
                    let sheetName = b.name.substring(0, 31).replace(/[\\/?*\[\]:]/g, '');
-                   // Kalo kembar atau kosong
                    if (!sheetName) sheetName = `Gedung ${idx + 1}`;
                    
-                   try {
-                      window.XLSX.utils.book_append_sheet(wb, wsB, sheetName);
-                   } catch(e) {
-                      // If duplicate name or error, fallback to index
-                      window.XLSX.utils.book_append_sheet(wb, wsB, `Gedung_${idx + 1}`);
-                   }
+                   try { window.XLSX.utils.book_append_sheet(wb, wsB, sheetName); } 
+                   catch(e) { window.XLSX.utils.book_append_sheet(wb, wsB, `Gedung_${idx + 1}`); }
                 });
 
                 window.XLSX.writeFile(wb, `${(projectName || 'Laporan').replace(/\s+/g, '_')}.xlsx`);
@@ -1176,6 +1214,7 @@
             }
           }, [stats, rooms, zones, factors, floors, buildings, projectName, projectLocation, landArea, reportSortBy, kdbLimit, ktbLimit, kdhLimit, klbLimit, showAlert]);
 
+          // --- REUSABLE COMPONENTS (Mini UI) ---
           const ComplianceBadge = ({ isOk, label, current, limit, unit = "", subText = "" }) => (
             <div className={`p-4 rounded-md border flex flex-col h-full transition-all print:break-inside-avoid ${isOk ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800' : 'bg-rose-50/50 border-rose-200 text-rose-800'}`}>
               <div className="flex items-center justify-between mb-2">
@@ -1197,9 +1236,9 @@
 
           return (
             <div className="min-h-screen flex flex-col">
-              <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadProject} className="hidden" />
+              <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadProject} className="hidden" aria-hidden="true" />
 
-              {/* GLOBAL DATALIST UNTUK AUTO-SUGGESTIONS (Aman dari Re-Render Mutasi DOM) */}
+              {/* GLOBAL DATALIST UNTUK AUTO-SUGGESTIONS */}
               <datalist id="reference-options">
                 {suggestions.notes.map((ref, idx) => <option key={idx} value={ref} />)}
               </datalist>
@@ -1207,8 +1246,8 @@
                 {suggestions.names.map((name, idx) => <option key={idx} value={name} />)}
               </datalist>
 
-              {/* NAVBAR */}
-              <div className="bg-white border-b border-zinc-200 sticky top-0 z-40 px-4 py-3 md:px-8 shadow-sm print:hidden">
+              {/* HEADER / NAVBAR */}
+              <header className="bg-white border-b border-zinc-200 sticky top-0 z-40 px-4 py-3 md:px-8 shadow-sm print:hidden">
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className="bg-zinc-800 p-2 rounded-md text-white shadow-sm">
@@ -1219,42 +1258,45 @@
                       <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Intensitas Lahan & Program Ruang</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+                  
+                  <nav aria-label="Main Navigation" className="flex items-center gap-4 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
                     <div className="flex items-center gap-2 border-r border-zinc-200 pr-4 relative">
-                      <button onClick={handleNewProject} title="Buat Proyek Baru" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-600 hover:bg-rose-50 hover:text-rose-600 transition-colors">
+                      <button type="button" onClick={handleNewProject} title="Buat Proyek Baru" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-600 hover:bg-rose-50 hover:text-rose-600 transition-colors">
                         {FilePlus && <FilePlus className="w-4 h-4" />} Baru
                       </button>
-                      <button onClick={() => fileInputRef.current.click()} title="Buka Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-600 hover:bg-zinc-100 hover:text-blue-600 transition-colors">
+                      <button type="button" onClick={() => fileInputRef.current.click()} title="Buka Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-600 hover:bg-zinc-100 hover:text-blue-600 transition-colors">
                         {FolderOpen && <FolderOpen className="w-4 h-4" />} Buka
                       </button>
-                      <button onClick={handleSaveProject} title="Simpan Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-600 hover:bg-zinc-100 hover:text-blue-600 transition-colors">
+                      <button type="button" onClick={handleSaveProject} title="Simpan Proyek (.json)" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-600 hover:bg-zinc-100 hover:text-blue-600 transition-colors">
                         {Save && <Save className="w-4 h-4" />} Simpan
                       </button>
                       <span className={`absolute -bottom-3 right-4 text-[8px] font-bold text-emerald-500 transition-opacity duration-500 ${isAutosaving ? 'opacity-100' : 'opacity-0'}`}>
                         ✓ Tersimpan
                       </span>
                     </div>
+                    
                     <div className="flex items-center gap-1 border-r border-zinc-200 pr-4">
-                      <button onClick={undo} disabled={!canUndo} className={`p-1.5 rounded-md transition-colors ${canUndo ? 'text-zinc-700 hover:bg-zinc-100 cursor-pointer' : 'text-zinc-300 cursor-not-allowed'}`}>{Undo2 && <Undo2 className="w-4 h-4" />}</button>
-                      <button onClick={redo} disabled={!canRedo} className={`p-1.5 rounded-md transition-colors ${canRedo ? 'text-zinc-700 hover:bg-zinc-100 cursor-pointer' : 'text-zinc-300 cursor-not-allowed'}`}>{Redo2 && <Redo2 className="w-4 h-4" />}</button>
+                      <button type="button" onClick={undo} disabled={!canUndo} className={`p-1.5 rounded-md transition-colors ${canUndo ? 'text-zinc-700 hover:bg-zinc-100 cursor-pointer' : 'text-zinc-300 cursor-not-allowed'}`} title="Undo (Ctrl+Z)">{Undo2 && <Undo2 className="w-4 h-4" />}</button>
+                      <button type="button" onClick={redo} disabled={!canRedo} className={`p-1.5 rounded-md transition-colors ${canRedo ? 'text-zinc-700 hover:bg-zinc-100 cursor-pointer' : 'text-zinc-300 cursor-not-allowed'}`} title="Redo (Ctrl+Y)">{Redo2 && <Redo2 className="w-4 h-4" />}</button>
                     </div>
+                    
                     <div className="flex bg-zinc-100 p-1 rounded-lg shrink-0 border border-zinc-200/50">
-                      <button onClick={() => setActiveTab('input')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'input' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>Rancangan</button>
-                      <button onClick={() => setActiveTab('parking')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'parking' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>{Car && <Car className="w-3.5 h-3.5" />} Parkir</button>
-                      <button onClick={() => setActiveTab('visual')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'visual' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>{Layout && <Layout className="w-3.5 h-3.5" />} Visual</button>
-                      <button onClick={() => setActiveTab('report')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'report' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>Laporan</button>
+                      <button type="button" onClick={() => setActiveTab('input')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'input' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>Rancangan</button>
+                      <button type="button" onClick={() => setActiveTab('parking')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'parking' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>{Car && <Car className="w-3.5 h-3.5" />} Parkir</button>
+                      <button type="button" onClick={() => setActiveTab('visual')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'visual' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>{Layout && <Layout className="w-3.5 h-3.5" />} Visual</button>
+                      <button type="button" onClick={() => setActiveTab('report')} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'report' ? 'bg-white text-blue-700 shadow-sm border border-zinc-200/50' : 'text-zinc-500 hover:text-zinc-700'}`}>Laporan</button>
                     </div>
-                  </div>
+                  </nav>
                 </div>
-              </div>
+              </header>
 
               <main id="printable-report" className="flex-grow max-w-7xl mx-auto w-full p-4 md:p-8 print:p-0 print:max-w-none">
                 
-                {/* HEADER PROYEK */}
-                <div className={`mb-6 border-b-2 pb-4 flex flex-col md:flex-row md:items-start justify-between gap-4 ${(activeTab === 'report' || activeTab === 'parking' || activeTab === 'visual') ? 'border-zinc-900' : 'border-zinc-200'}`}>
+                {/* PROJECT HEADER SECTION */}
+                <section className={`mb-6 border-b-2 pb-4 flex flex-col md:flex-row md:items-start justify-between gap-4 ${(activeTab === 'report' || activeTab === 'parking' || activeTab === 'visual') ? 'border-zinc-900' : 'border-zinc-200'}`}>
                   <div className="flex-1 w-full relative group">
                     {activeTab === 'input' ? (
-                      <React.Fragment>
+                      <>
                         <div className="relative">
                           <input 
                             type="text" 
@@ -1274,9 +1316,9 @@
                             className="w-full bg-transparent border-b-2 border-transparent hover:border-zinc-300 focus:border-blue-600 text-sm font-bold text-zinc-500 uppercase tracking-widest placeholder:text-zinc-300 focus:ring-0 p-0 pb-1 outline-none transition-colors" 
                           />
                         </div>
-                      </React.Fragment>
+                      </>
                     ) : (
-                      <React.Fragment>
+                      <>
                         <div className="relative">
                           <div className="w-full bg-transparent border-b-2 border-transparent text-3xl font-black uppercase text-zinc-900 p-0 pb-1">
                             {projectName || 'Laporan Masterplan'}
@@ -1288,35 +1330,34 @@
                             {projectLocation || 'Lokasi Belum Ditentukan'}
                           </div>
                         </div>
-                      </React.Fragment>
+                      </>
                     )}
                   </div>
                   
                   {(activeTab === 'report' || activeTab === 'parking' || activeTab === 'visual') && (
                     <div className="flex flex-wrap items-center gap-2 md:gap-3 print:hidden shrink-0" data-html2canvas-ignore="true">
                       {activeTab === 'report' && (
-                          <button onClick={handleExportExcel} disabled={isExportingExcel} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isExportingExcel ? 'bg-emerald-400 text-white cursor-wait' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}>
+                          <button type="button" onClick={handleExportExcel} disabled={isExportingExcel} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isExportingExcel ? 'bg-emerald-400 text-white cursor-wait' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}>
                             {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel'}
                           </button>
                       )}
                       
-                      <button onClick={handleScreenshot} disabled={isTakingScreenshot} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isTakingScreenshot ? 'bg-blue-400 text-white cursor-wait' : 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50'}`}>
+                      <button type="button" onClick={handleScreenshot} disabled={isTakingScreenshot} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isTakingScreenshot ? 'bg-blue-400 text-white cursor-wait' : 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50'}`}>
                         {Camera && <Camera className={`w-4 h-4 ${isTakingScreenshot ? 'animate-pulse' : ''}`} />} {isTakingScreenshot ? 'Memproses...' : 'Screenshot (PNG)'}
                       </button>
 
-                      <button onClick={handlePrintPDF} disabled={isPrinting} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isPrinting ? 'bg-zinc-400 text-white cursor-wait' : 'bg-zinc-800 text-white hover:bg-zinc-900'}`}>
+                      <button type="button" onClick={handlePrintPDF} disabled={isPrinting} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isPrinting ? 'bg-zinc-400 text-white cursor-wait' : 'bg-zinc-800 text-white hover:bg-zinc-900'}`}>
                         {Printer && <Printer className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />} {isPrinting ? 'Memproses...' : 'Cetak PDF (Vector)'}
                       </button>
                     </div>
                   )}
-                </div>
+                </section>
 
                 {/* TAB PARKING VIEW */}
                 {activeTab === 'parking' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                    <section className="space-y-6 animate-in fade-in slide-in-from-bottom-2" aria-labelledby="parking-dashboard">
                         {/* HERO PARKING DASHBOARD */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 print:flex print:flex-col print:break-inside-avoid">
-                            
                             {/* KOTAK KIRI: TOTAL KEBUTUHAN */}
                             <div className={`h-full p-6 rounded-xl border flex flex-col justify-between shadow-sm ${stats.parkingStats.totalArea > stats.parkingStats.remainingSurfaceArea ? 'bg-rose-50 border-rose-200' : 'bg-zinc-900 border-zinc-800 text-white'}`}>
                                 <div>
@@ -1431,7 +1472,7 @@
                         <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid">
                             <div className="flex justify-between items-center mb-6 pb-4 border-b border-zinc-100">
                                 <h3 className="font-black text-zinc-800 text-lg uppercase tracking-wider">Aturan Kalkulasi Parkir</h3>
-                                <button onClick={addParkingRule} className="flex items-center gap-2 px-4 py-2 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200 rounded-md text-xs font-black uppercase tracking-widest transition-colors print:hidden">
+                                <button type="button" onClick={addParkingRule} className="flex items-center gap-2 px-4 py-2 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200 rounded-md text-xs font-black uppercase tracking-widest transition-colors print:hidden">
                                     {Plus && <Plus className="w-4 h-4" />} Tambah Aturan
                                 </button>
                             </div>
@@ -1441,12 +1482,11 @@
                                     const statDetail = stats.parkingStats.details.find(d => d.id === rule.id);
                                     return (
                                         <div key={rule.id} className="p-5 rounded-lg bg-zinc-50 border border-zinc-200 flex flex-col lg:flex-row gap-6 print:bg-white print:border-zinc-300 print:break-inside-avoid">
-                                            
                                             {/* Kolom Kiri: Input Aturan */}
                                             <div className="flex-1 space-y-4 print:hidden">
                                                 <div className="flex justify-between items-center">
                                                     <input type="text" value={rule.name} onChange={(e) => updateParkingRule(rule.id, 'name', e.target.value)} className="bg-transparent border-b-2 border-zinc-300 hover:border-blue-400 focus:border-blue-600 focus:ring-0 font-black text-zinc-800 text-lg outline-none w-full mr-4 transition-colors" placeholder="Nama Aturan (Misal: Parkir Tamu)" />
-                                                    <button onClick={() => removeParkingRule(rule.id)} className="text-zinc-400 hover:text-rose-500 bg-white p-1.5 rounded-md shadow-sm border border-zinc-200 transition-colors">
+                                                    <button type="button" onClick={() => removeParkingRule(rule.id)} className="text-zinc-400 hover:text-rose-500 bg-white p-1.5 rounded-md shadow-sm border border-zinc-200 transition-colors">
                                                         {Trash2 && <Trash2 className="w-4 h-4" />}
                                                     </button>
                                                 </div>
@@ -1488,7 +1528,7 @@
                                                                 {zones.map(z => {
                                                                     const isSelected = (rule.targetZoneIds || []).includes(z.id);
                                                                     return (
-                                                                        <button 
+                                                                        <button type="button" 
                                                                             key={z.id}
                                                                             onClick={() => {
                                                                                 const currentIds = rule.targetZoneIds || [];
@@ -1508,24 +1548,23 @@
                                                 
                                                 <div className="bg-blue-50/50 border border-blue-100 rounded-md p-3 flex items-center gap-3">
                                                     {rule.calcMethod === 'percentage' ? (
-                                                        <React.Fragment>
+                                                        <>
                                                             <span className="text-xs font-bold text-blue-800">Sediakan {rule.vehicleType} sebanyak</span>
                                                             <input type="number" value={rule.ratio} onChange={(e) => updateParkingRule(rule.id, 'ratio', Number(e.target.value))} className="w-20 bg-white border border-blue-200 rounded-md px-2 py-1 text-center text-sm font-mono font-black text-blue-700 outline-none focus:ring-2 focus:ring-blue-400" />
                                                             <span className="text-xs font-bold text-blue-800">% dari total {rule.basis === 'occupants' ? 'Penghuni' : 'Luas Area'}</span>
-                                                        </React.Fragment>
+                                                        </>
                                                     ) : (
-                                                        <React.Fragment>
+                                                        <>
                                                             <span className="text-xs font-bold text-blue-800">Sediakan 1 {rule.vehicleType} untuk setiap</span>
                                                             <input type="number" value={rule.ratio} onChange={(e) => updateParkingRule(rule.id, 'ratio', Number(e.target.value))} className="w-20 bg-white border border-blue-200 rounded-md px-2 py-1 text-center text-sm font-mono font-black text-blue-700 outline-none focus:ring-2 focus:ring-blue-400" />
                                                             <span className="text-xs font-bold text-blue-800">{rule.basis === 'occupants' ? 'Orang/Penghuni' : 'm² Luas Bangunan'}</span>
-                                                        </React.Fragment>
+                                                        </>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Kolom Kanan: Output Kalkulasi (Selalu tampil termasuk saat print) */}
+                                            {/* Kolom Kanan: Output Kalkulasi */}
                                             <div className="w-full lg:w-64 bg-zinc-900 rounded-lg p-5 text-white flex flex-col justify-center relative overflow-hidden">
-                                                {/* Background Pattern */}
                                                 <div className="absolute -right-4 -bottom-4 opacity-5 print:hidden">
                                                     {ParkingCircle ? <ParkingCircle className="w-32 h-32" /> : <Car className="w-32 h-32" />}
                                                 </div>
@@ -1549,7 +1588,6 @@
                                                     </div>
                                                 </div>
                                             </div>
-
                                         </div>
                                     );
                                 })}
@@ -1557,23 +1595,22 @@
                                 {parkingRules.length === 0 && (
                                     <div className="text-center py-12 bg-zinc-50 rounded-lg border-2 border-dashed border-zinc-200">
                                         <p className="text-sm font-bold text-zinc-500 mb-4">Belum ada aturan perhitungan parkir.</p>
-                                        <button onClick={addParkingRule} className="px-6 py-2.5 bg-zinc-800 text-white rounded-md text-sm font-black uppercase tracking-widest hover:bg-zinc-900 transition-colors shadow-sm">
+                                        <button type="button" onClick={addParkingRule} className="px-6 py-2.5 bg-zinc-800 text-white rounded-md text-sm font-black uppercase tracking-widest hover:bg-zinc-900 transition-colors shadow-sm">
                                             Tambah Aturan Pertama
                                         </button>
                                     </div>
                                 )}
                             </div>
                         </div>
-                    </div>
+                    </section>
                 )}
 
                 {/* DASHBOARD UMUM UNTUK TAB INPUT DAN REPORT */}
                 {activeTab !== 'parking' && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6 print:mb-6 print:flex print:flex-wrap">
-                      <ComplianceBadge label="KDB Kawasan" isOk={stats.currentKDB <= (Number(kdbLimit)||0)} current={stats.currentKDB} limit={kdbLimit} unit="%" subText={<React.Fragment><div className="mb-0.5">Terdesain: {stats.footprint.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKDBArea.toFixed(1)} m²</div></React.Fragment>} />
-                      <ComplianceBadge label="KTB Kawasan" isOk={stats.currentKTB <= (Number(ktbLimit)||0)} current={stats.currentKTB} limit={ktbLimit} unit="%" subText={<React.Fragment><div className="mb-0.5">Terdesain: {stats.basementFootprint.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKTBArea.toFixed(1)} m²</div></React.Fragment>} />
+                    <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6 print:mb-6 print:flex print:flex-wrap" aria-label="Dashboard Kawasan">
+                      <ComplianceBadge label="KDB Kawasan" isOk={stats.currentKDB <= (Number(kdbLimit)||0)} current={stats.currentKDB} limit={kdbLimit} unit="%" subText={<><div className="mb-0.5">Terdesain: {stats.footprint.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKDBArea.toFixed(1)} m²</div></>} />
+                      <ComplianceBadge label="KTB Kawasan" isOk={stats.currentKTB <= (Number(ktbLimit)||0)} current={stats.currentKTB} limit={ktbLimit} unit="%" subText={<><div className="mb-0.5">Terdesain: {stats.basementFootprint.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKTBArea.toFixed(1)} m²</div></>} />
                       
-                      {/* FIXED KDH BOX TO ALIGN WITH OTHERS */}
                       <div className="p-4 rounded-md border flex flex-col h-full transition-all bg-emerald-50/50 border-emerald-200 text-emerald-800 print:break-inside-avoid">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">KDH (Area Hijau)</span>
@@ -1588,7 +1625,7 @@
                         </div>
                       </div>
 
-                      <ComplianceBadge label="KLB (FAR) Kawasan" isOk={stats.currentKLB <= (Number(klbLimit)||0)} current={stats.currentKLB} limit={klbLimit} subText={<React.Fragment><div className="mb-0.5">Terdesain: {stats.brutoTotal.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKLBArea.toFixed(1)} m²</div></React.Fragment>} />
+                      <ComplianceBadge label="KLB (FAR) Kawasan" isOk={stats.currentKLB <= (Number(klbLimit)||0)} current={stats.currentKLB} limit={klbLimit} subText={<><div className="mb-0.5">Terdesain: {stats.brutoTotal.toFixed(1)} m²</div><div>Maks: {stats.maxAllowedKLBArea.toFixed(1)} m²</div></>} />
                       
                       <div className="bg-zinc-900 p-4 rounded-md text-white flex flex-col h-full shadow-sm col-span-2 print:break-inside-avoid print:flex-1">
                         <div className="flex items-center justify-between opacity-70 mb-2">
@@ -1607,7 +1644,7 @@
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </section>
                 )}
 
                 {/* TAB INPUT VIEW */}
@@ -1615,7 +1652,7 @@
                   <div className="space-y-6">
                     
                     <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden transition-all">
-                      <button 
+                      <button type="button" 
                         onClick={() => setShowProjectParams(!showProjectParams)} 
                         className={`w-full flex items-center justify-between p-4 bg-zinc-50 hover:bg-zinc-100 transition-colors ${showProjectParams ? 'border-b border-zinc-200' : ''}`}
                       >
@@ -1674,23 +1711,23 @@
                     </div>
 
                     <div className="flex gap-2 flex-wrap items-center">
-                      <button onClick={() => setShowFactorManager(!showFactorManager)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${showFactorManager ? 'bg-zinc-800 text-white border border-zinc-800' : 'bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 shadow-sm'}`}>{SlidersHorizontal && <SlidersHorizontal className="w-3.5 h-3.5" />} Atur Faktor Pengali</button>
-                      <button onClick={() => setShowZoneManager(!showZoneManager)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${showZoneManager ? 'bg-zinc-800 text-white border border-zinc-800' : 'bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 shadow-sm'}`}>{Palette && <Palette className="w-3.5 h-3.5" />} Atur Zoning & Warna</button>
+                      <button type="button" onClick={() => setShowFactorManager(!showFactorManager)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${showFactorManager ? 'bg-zinc-800 text-white border border-zinc-800' : 'bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 shadow-sm'}`}>{SlidersHorizontal && <SlidersHorizontal className="w-3.5 h-3.5" />} Atur Faktor Pengali</button>
+                      <button type="button" onClick={() => setShowZoneManager(!showZoneManager)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${showZoneManager ? 'bg-zinc-800 text-white border border-zinc-800' : 'bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 shadow-sm'}`}>{Palette && <Palette className="w-3.5 h-3.5" />} Atur Zoning & Warna</button>
                     </div>
 
-                    {/* MANAGERS */}
+                    {/* MANAGERS SECTIONS */}
                     {showFactorManager && (
-                      <div className="bg-white p-5 rounded-xl border-2 border-zinc-200 shadow-sm animate-in zoom-in-95 duration-200">
+                      <section className="bg-white p-5 rounded-xl border-2 border-zinc-200 shadow-sm animate-in zoom-in-95 duration-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-bold text-zinc-800 text-sm flex items-center gap-2">{SlidersHorizontal && <SlidersHorizontal className="w-4 h-4 text-zinc-500" />} Manajemen Faktor Pengali Global</h3>
-                          <button onClick={addFactor} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">{PlusCircle && <PlusCircle className="w-3 h-3" />} Tambah Faktor</button>
+                          <button type="button" onClick={addFactor} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">{PlusCircle && <PlusCircle className="w-3 h-3" />} Tambah Faktor</button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {factors.map(fac => (
                             <div key={fac.id} className="p-4 rounded-lg border border-zinc-200 bg-zinc-50 flex flex-col gap-3">
                               <div className="flex items-center justify-between">
                                 <input type="text" value={fac.label} onChange={(e) => updateFactor(fac.id, 'label', e.target.value)} className="bg-white border border-zinc-200 rounded-md px-3 py-1.5 text-sm font-bold focus:ring-1 focus:ring-blue-400 w-full mr-2 text-zinc-700 outline-none" placeholder="Nama Faktor" />
-                                <button onClick={() => removeFactor(fac.id)} className="text-zinc-400 hover:text-rose-500 p-1.5 bg-white rounded-md border border-zinc-200 transition-colors shadow-sm">{X && <X className="w-3.5 h-3.5" />}</button>
+                                <button type="button" onClick={() => removeFactor(fac.id)} className="text-zinc-400 hover:text-rose-500 p-1.5 bg-white rounded-md border border-zinc-200 transition-colors shadow-sm">{X && <X className="w-3.5 h-3.5" />}</button>
                               </div>
                               <div className="flex flex-col gap-2">
                                 <div className="flex items-center gap-2">
@@ -1698,7 +1735,7 @@
                                     <input type="number" step="0.1" value={fac.defaultVal !== undefined ? fac.defaultVal : ''} onChange={(e) => updateFactorDefault(fac.id, e.target.value)} className="w-full px-2 py-1.5 text-sm font-mono font-bold text-blue-700 outline-none text-center" />
                                     <span className="px-2 py-1.5 text-[10px] font-black text-zinc-400 bg-zinc-100 border-l border-zinc-200">%</span>
                                   </div>
-                                  <button onClick={() => applyFactorToAllFloors(fac.id)} className="flex-1 bg-zinc-800 hover:bg-zinc-900 text-white text-[10px] font-black uppercase tracking-wider py-2 rounded-md transition-colors shadow-sm" title="Terapkan persentase ini ke semua lantai">
+                                  <button type="button" onClick={() => applyFactorToAllFloors(fac.id)} className="flex-1 bg-zinc-800 hover:bg-zinc-900 text-white text-[10px] font-black uppercase tracking-wider py-2 rounded-md transition-colors shadow-sm" title="Terapkan persentase ini ke semua lantai">
                                     Terapkan Semua
                                   </button>
                                 </div>
@@ -1714,37 +1751,37 @@
                             {Info && <Info className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
                             <p>Mengubah pengaturan di atas hanya menjadi nilai *default* untuk lantai baru. Klik <strong>Terapkan Semua</strong> untuk memperbarui seluruh lantai yang ada.</p>
                         </div>
-                      </div>
+                      </section>
                     )}
 
                     {showZoneManager && (
-                      <div className="bg-white p-5 rounded-xl border-2 border-zinc-200 shadow-sm animate-in zoom-in-95 duration-200">
+                      <section className="bg-white p-5 rounded-xl border-2 border-zinc-200 shadow-sm animate-in zoom-in-95 duration-200">
                         <div className="flex justify-between items-center mb-4">
                           <h3 className="font-bold text-zinc-800 text-sm flex items-center gap-2">{Palette && <Palette className="w-4 h-4 text-zinc-500" />} Manajemen Zoning</h3>
-                          <button onClick={addZone} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">{PlusCircle && <PlusCircle className="w-3 h-3" />} Tambah Zona</button>
+                          <button type="button" onClick={addZone} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">{PlusCircle && <PlusCircle className="w-3 h-3" />} Tambah Zona</button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
                           {zones.map(z => (
                             <div key={z.id} className={`p-3 rounded-lg border flex flex-col gap-2 ${getZoneStyle(z.colorId).color.split(' ')[0]} bg-opacity-30`}>
                               <div className="flex items-center justify-between">
                                 <input type="text" value={z.label} onChange={(e) => updateZone(z.id, 'label', e.target.value)} className="bg-white/70 border-none rounded px-2 py-1 text-xs font-bold text-zinc-800 w-full mr-2 outline-none focus:ring-1 focus:ring-black/20" />
-                                <button onClick={() => removeZone(z.id)} className="text-black/40 hover:text-rose-600">{X && <X className="w-3.5 h-3.5" />}</button>
+                                <button type="button" onClick={() => removeZone(z.id)} className="text-black/40 hover:text-rose-600">{X && <X className="w-3.5 h-3.5" />}</button>
                               </div>
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {ZONE_COLORS.map(c => (
-                                  <button key={c.id} onClick={() => updateZone(z.id, 'colorId', c.id)} className={`w-4 h-4 rounded-full border-2 ${c.color.split(' ')[0]} ${z.colorId === c.id ? 'border-zinc-800 scale-110' : 'border-transparent hover:border-black/20'} transition-all`} title={c.id} />
+                                  <button type="button" key={c.id} onClick={() => updateZone(z.id, 'colorId', c.id)} className={`w-4 h-4 rounded-full border-2 ${c.color.split(' ')[0]} ${z.colorId === c.id ? 'border-zinc-800 scale-110' : 'border-transparent hover:border-black/20'} transition-all`} title={c.id} />
                                 ))}
                               </div>
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </section>
                     )}
 
                     <div className="space-y-4">
                       
                       {/* TABS GEDUNG */}
-                      <div className="flex items-center gap-1 overflow-x-auto pb-1 border-b-2 border-zinc-200">
+                      <nav className="flex items-center gap-1 overflow-x-auto pb-1 border-b-2 border-zinc-200" aria-label="Tab Bangunan">
                          {buildings.map((b, idx) => (
                             <div 
                                 key={b.id} 
@@ -1755,7 +1792,7 @@
                                 onDrop={(e) => handleBuildingDrop(e, idx)} 
                                 onDragEnd={handleBuildingDragEnd}
                             >
-                                <button 
+                                <button type="button" 
                                     onClick={() => setActiveBuildingId(b.id)}
                                     className={`flex items-center gap-2 whitespace-nowrap pl-4 pr-8 py-2.5 font-bold text-sm rounded-t-lg transition-all border-x border-t cursor-pointer ${activeBuildingId === b.id ? 'bg-white text-zinc-900 border-zinc-300 shadow-[0_-2px_4px_rgba(0,0,0,0.02)]' : 'bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200'}`}
                                 >
@@ -1764,7 +1801,7 @@
                                     </span>
                                     {b.name}
                                 </button>
-                                <button 
+                                <button type="button" 
                                     onClick={(e) => { e.stopPropagation(); removeBuilding(b.id); }} 
                                     className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md transition-colors ${activeBuildingId === b.id ? 'text-zinc-400 hover:text-white hover:bg-rose-500 opacity-100' : 'opacity-0 hidden'}`}
                                 >
@@ -1772,20 +1809,20 @@
                                 </button>
                             </div>
                          ))}
-                         <button onClick={addBuilding} className="flex items-center gap-1.5 px-4 py-2.5 ml-1 text-sm font-bold text-zinc-600 hover:bg-zinc-200 rounded-t-lg transition-colors border border-dashed border-zinc-300">
+                         <button type="button" onClick={addBuilding} className="flex items-center gap-1.5 px-4 py-2.5 ml-1 text-sm font-bold text-zinc-600 hover:bg-zinc-200 rounded-t-lg transition-colors border border-dashed border-zinc-300">
                             {Plus && <Plus className="w-4 h-4" />} Tambah Gedung
                          </button>
-                      </div>
+                      </nav>
 
                       {/* EDITOR GEDUNG AKTIF */}
                       {activeBuilding && (
-                          <div className="bg-white p-4 md:p-6 rounded-b-xl border border-t-0 border-zinc-300 mb-8 animate-in fade-in shadow-sm min-h-[50vh]">
+                          <article className="bg-white p-4 md:p-6 rounded-b-xl border border-t-0 border-zinc-300 mb-8 animate-in fade-in shadow-sm min-h-[50vh]">
                               
                               <div className="flex justify-between items-center mb-5 pb-4 border-b border-zinc-100 px-1">
                                  <div className="text-xs font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">
                                      {Building && <Building className="w-4 h-4 text-zinc-500" />} {activeBuilding.name}
                                  </div>
-                                 <button 
+                                 <button type="button" 
                                      onClick={() => setDuplicateBuildingModal({ isOpen: true, buildingId: activeBuilding.id, count: 1 })} 
                                      className="text-xs font-bold flex items-center gap-1.5 text-zinc-600 bg-white border border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300 px-3 py-1.5 rounded-md shadow-sm transition-colors"
                                  >
@@ -1833,7 +1870,7 @@
                                   <div className="w-full pt-2 border-t border-zinc-200/60 mt-2">
                                       <div className="flex justify-between items-center mb-1.5">
                                           <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block">Catatan / Spesifikasi Gedung (Opsional)</label>
-                                          <button 
+                                          <button type="button" 
                                               onClick={() => handleEnhanceBuildingNote(activeBuilding.id, activeBuilding.name, activeBuilding.notes)}
                                               disabled={aiLoadingState[`building_note_${activeBuilding.id}`]}
                                               className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
@@ -1853,11 +1890,12 @@
                               </div>
 
                               {activeBuildingFloors.length >= 2 && (
-                                <button onClick={() => addFloor('top')} className={`w-full flex items-center justify-center gap-2 py-2.5 mb-6 text-xs font-bold border border-dashed rounded-lg transition-colors bg-zinc-50 border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900`}>
+                                <button type="button" onClick={() => addFloor('top')} className={`w-full flex items-center justify-center gap-2 py-2.5 mb-6 text-xs font-bold border border-dashed rounded-lg transition-colors bg-zinc-50 border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900`}>
                                   {Plus && <Plus className="w-4 h-4" />} Sisipkan Lantai Teratas (Alt+L)
                                 </button>
                               )}
 
+                              {/* LIST LANTAI */}
                               <div className="space-y-8">
                                   {activeBuildingFloors.map((f, fIdx) => (
                                     <div 
@@ -1883,7 +1921,7 @@
                                             <div className={`${collapsedFloors[f.id] ? 'cursor-grab active:cursor-grabbing text-zinc-500 hover:text-zinc-800' : 'cursor-not-allowed text-zinc-300'} transition-colors`} title={collapsedFloors[f.id] ? "Tahan dan geser untuk memindahkan lantai" : "Sembunyikan (tutup) ruangan di lantai ini terlebih dahulu untuk memindahkannya"}>
                                               {GripVertical && <GripVertical className="w-4 h-4" />}
                                             </div>
-                                            <button onClick={() => toggleFloorCollapse(f.id)} className="p-1 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/50 rounded-md transition-colors" title={collapsedFloors[f.id] ? "Tampilkan Ruangan" : "Sembunyikan Ruangan"}>
+                                            <button type="button" onClick={() => toggleFloorCollapse(f.id)} className="p-1 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/50 rounded-md transition-colors" title={collapsedFloors[f.id] ? "Tampilkan Ruangan" : "Sembunyikan Ruangan"}>
                                               {collapsedFloors[f.id] ? (ChevronRight && <ChevronRight className="w-4 h-4" />) : (ChevronDown && <ChevronDown className="w-4 h-4" />)}
                                             </button>
                                             <span className="bg-zinc-800 text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">F{fIdx+1}</span>
@@ -1922,35 +1960,36 @@
                                           )}
 
                                           <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover/floor:opacity-100 transition-opacity">
-                                            <button onClick={(e) => { e.stopPropagation(); setMoveFloorModal({ isOpen: true, floorId: f.id, targetBuildingId: activeBuildingId }); }} className="text-zinc-400 hover:text-blue-600 p-1.5 bg-white border border-zinc-200 rounded hover:bg-blue-50 shadow-sm" title="Pindah Gedung">{MoveRight && <MoveRight className="w-3.5 h-3.5" />}</button>
-                                            <button onClick={(e) => { e.stopPropagation(); setDuplicateModal({ isOpen: true, floorId: f.id, targetBuildingId: activeBuildingId, count: 1 }); }} className="text-zinc-400 hover:text-zinc-800 p-1.5 bg-white border border-zinc-200 rounded hover:bg-zinc-50 shadow-sm" title="Salin/Duplikasi Lantai">{Copy && <Copy className="w-3.5 h-3.5" />}</button>
-                                            <button onClick={(e) => { e.stopPropagation(); removeFloor(f.id); }} className="text-zinc-400 hover:text-white p-1.5 bg-white border border-zinc-200 rounded hover:bg-rose-500 hover:border-rose-500 shadow-sm" title="Hapus Lantai">{Trash2 && <Trash2 className="w-3.5 h-3.5" />}</button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setMoveFloorModal({ isOpen: true, floorId: f.id, targetBuildingId: activeBuildingId }); }} className="text-zinc-400 hover:text-blue-600 p-1.5 bg-white border border-zinc-200 rounded hover:bg-blue-50 shadow-sm" title="Pindah Gedung">{MoveRight && <MoveRight className="w-3.5 h-3.5" />}</button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setDuplicateModal({ isOpen: true, floorId: f.id, targetBuildingId: activeBuildingId, count: 1 }); }} className="text-zinc-400 hover:text-zinc-800 p-1.5 bg-white border border-zinc-200 rounded hover:bg-zinc-50 shadow-sm" title="Salin/Duplikasi Lantai">{Copy && <Copy className="w-3.5 h-3.5" />}</button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); removeFloor(f.id); }} className="text-zinc-400 hover:text-white p-1.5 bg-white border border-zinc-200 rounded hover:bg-rose-500 hover:border-rose-500 shadow-sm" title="Hapus Lantai">{Trash2 && <Trash2 className="w-3.5 h-3.5" />}</button>
                                           </div>
                                       </div>
 
                                       {/* PROGRESSIVE DISCLOSURE: TABLE AREA */}
                                       {!collapsedFloors[f.id] && (
                                         <div className="relative">
+                                          {/* Header Aksi Massal */}
                                           {selectedRoomIds.some(id => rooms.find(r => r.id === id)?.floorId === f.id) && (
                                             <div className="absolute top-0 left-0 right-0 z-30 bg-blue-600/95 backdrop-blur px-4 py-2 border-b border-blue-700 flex justify-between items-center animate-in fade-in duration-200 shadow-md">
                                               <span className="text-xs font-black text-white uppercase tracking-widest">
                                                 {selectedRoomIds.filter(id => rooms.find(r => r.id === id)?.floorId === f.id).length} Ruang Terpilih
                                               </span>
                                               <div className="flex gap-2">
-                                                <button onClick={() => setMoveModal({ isOpen: true, targetFloorId: '' })} className="flex items-center gap-1 text-[10px] font-bold bg-white/20 text-white hover:bg-white hover:text-blue-700 px-3 py-1.5 rounded transition-all">
+                                                <button type="button" onClick={() => setMoveModal({ isOpen: true, targetFloorId: '' })} className="flex items-center gap-1 text-[10px] font-bold bg-white/20 text-white hover:bg-white hover:text-blue-700 px-3 py-1.5 rounded transition-all">
                                                   {MoveRight && <MoveRight className="w-3.5 h-3.5" />} Pindah Lantai
                                                 </button>
-                                                <button onClick={() => setCopyRoomModal({ isOpen: true, targetFloorId: '' })} className="flex items-center gap-1 text-[10px] font-bold bg-white/20 text-white hover:bg-white hover:text-blue-700 px-3 py-1.5 rounded transition-all">
+                                                <button type="button" onClick={() => setCopyRoomModal({ isOpen: true, targetFloorId: '' })} className="flex items-center gap-1 text-[10px] font-bold bg-white/20 text-white hover:bg-white hover:text-blue-700 px-3 py-1.5 rounded transition-all">
                                                   {Copy && <Copy className="w-3.5 h-3.5" />} Salin (Copy)
                                                 </button>
-                                                <button onClick={() => bulkDeleteRooms(f.id)} className="flex items-center gap-1 text-[10px] font-bold bg-rose-500 text-white hover:bg-rose-600 px-3 py-1.5 rounded transition-all shadow-sm">
+                                                <button type="button" onClick={() => bulkDeleteRooms(f.id)} className="flex items-center gap-1 text-[10px] font-bold bg-rose-500 text-white hover:bg-rose-600 px-3 py-1.5 rounded transition-all shadow-sm">
                                                   {Trash2 && <Trash2 className="w-3.5 h-3.5" />} Hapus
                                                 </button>
                                               </div>
                                             </div>
                                           )}
                                           
-                                          {/* STICKY TABLE IMPLEMENTATION */}
+                                          {/* TABEL RUANGAN */}
                                           <div className="overflow-y-auto max-h-[500px] print:max-h-none print:overflow-visible custom-scroll relative bg-white">
                                               <table className="w-full text-sm text-left border-collapse">
                                                 <thead className="sticky top-0 z-20 bg-zinc-100/95 backdrop-blur-[2px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-zinc-200 print:bg-transparent">
@@ -2089,7 +2128,7 @@
                                                             />
                                                         </td>
                                                         <td className="py-2 px-2 text-center border-l border-zinc-50 print:hidden">
-                                                            <button onClick={() => removeRoom(room.id)} className="text-zinc-300 hover:text-rose-500 hover:bg-rose-50 p-1.5 rounded transition-all opacity-0 group-hover/row:opacity-100 focus:opacity-100 outline-none">{X && <X className="w-3.5 h-3.5" />}</button>
+                                                            <button type="button" onClick={() => removeRoom(room.id)} className="text-zinc-300 hover:text-rose-500 hover:bg-rose-50 p-1.5 rounded transition-all opacity-0 group-hover/row:opacity-100 focus:opacity-100 outline-none">{X && <X className="w-3.5 h-3.5" />}</button>
                                                         </td>
                                                       </tr>
                                                     );
@@ -2105,7 +2144,6 @@
                                                   </tr>
                                                 </tbody>
                                                 
-                                                {/* STICKY FOOTER */}
                                                 <tfoot className="sticky bottom-0 z-20 bg-zinc-100 print:bg-transparent shadow-[0_-1px_2px_rgba(0,0,0,0.05)] border-t border-zinc-300 print:shadow-none print:border-t-2 print:border-black">
                                                   <tr className="text-xs">
                                                     <td colSpan={5} className="py-3 px-4 text-right text-zinc-500 print:text-black font-bold uppercase tracking-widest border-r border-zinc-200">
@@ -2125,10 +2163,10 @@
                                   ))}
                               </div>
                               
-                              <button onClick={() => addFloor('bottom')} className={`w-full flex items-center justify-center gap-2 py-3 mt-6 text-sm font-bold border border-dashed rounded-lg transition-all bg-zinc-50 border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 shadow-sm print:hidden`}>
+                              <button type="button" onClick={() => addFloor('bottom')} className={`w-full flex items-center justify-center gap-2 py-3 mt-6 text-sm font-bold border border-dashed rounded-lg transition-all bg-zinc-50 border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 shadow-sm print:hidden`}>
                                 {Plus && <Plus className="w-4 h-4" />} Tambah Lantai di Gedung {activeBuilding.name} (Alt + L)
                               </button>
-                          </div>
+                          </article>
                       )}
                     </div>
                   </div>
@@ -2140,7 +2178,7 @@
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:flex print:flex-col">
                       
                       {/* Analisis GFA Kawasan */}
-                      <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-zinc-300">
+                      <article className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-zinc-300">
                         <h3 className="font-bold text-zinc-800 mb-6 flex items-center gap-2">{PieChart && <PieChart className="w-5 h-5 text-blue-600 print:text-black" />} Distribusi GFA</h3>
                         <div className="space-y-6 max-h-80 print:max-h-none print:overflow-visible overflow-y-auto custom-scroll pr-2">
                           {stats.buildingDetails.map(b => {
@@ -2174,10 +2212,10 @@
                             );
                           })}
                         </div>
-                      </div>
+                      </article>
 
                       {/* Komposisi Zona */}
-                      <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-zinc-300">
+                      <article className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-zinc-300">
                         <h3 className="font-bold text-zinc-800 mb-6 flex items-center gap-2">{MapIcon && <MapIcon className="w-5 h-5 text-blue-600 print:text-black" />} Komposisi Zona (Bruto)</h3>
                         <div className="space-y-6 max-h-80 print:max-h-none print:overflow-visible overflow-y-auto custom-scroll pr-2">
                           {stats.buildingDetails.map(b => (
@@ -2207,10 +2245,10 @@
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </article>
 
                       {/* Elevasi per Gedung */}
-                      <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-zinc-300 flex flex-col">
+                      <article className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:shadow-none print:border-zinc-300 flex flex-col">
                         <h3 className="font-bold text-zinc-800 mb-6 flex items-center gap-2 shrink-0">{Layers && <Layers className="w-5 h-5 text-blue-600 print:text-black" />} Profil Elevasi Gedung</h3>
                         <div className="flex flex-col gap-4 overflow-y-auto max-h-64 print:max-h-none print:overflow-visible custom-scroll pr-2">
                             {stats.buildingDetails.map(b => (
@@ -2226,7 +2264,7 @@
                         <div className="mt-4 pt-3 border-t border-zinc-100 print:border-zinc-300 text-[9px] text-zinc-500 font-medium leading-relaxed italic">
                             *Data ketinggian ini belum ditambahkan dengan tinggi crown atau parapet bangunan dan jangan lupa cek batasan KKOP.
                         </div>
-                      </div>
+                      </article>
                     </div>
 
                     {/* TABEL REPORT PER GEDUNG */}
@@ -2306,6 +2344,7 @@
                                             );
                                         });
                                         })()}
+                                        
                                         {factors.map(fac => {
                                         const rawValue = f.factorValues?.[fac.id] !== undefined ? f.factorValues[fac.id] : '';
                                         const facValue = Number(rawValue) || 0; const facArea = (f.netto * facValue) / 100;
@@ -2314,15 +2353,14 @@
                                         return (
                                             <tr key={`${f.id}-${fac.id}`} className="text-[10px] bg-white text-zinc-500 border border-zinc-200 print:break-inside-avoid print:bg-transparent print:border-zinc-300">
                                             <td className="border-r border-zinc-300 print:border-zinc-300"></td>
-                                            <td className="border-r border-zinc-300 print:border-zinc-300"></td>
                                             <td className="py-1.5 px-4 text-center italic border-r border-zinc-300 print:border-zinc-300">+ {fac.label} {z ? `(→ ${z.label})` : ''}</td>
                                             <td className="py-1.5 px-4 text-center font-mono italic border-r border-zinc-300 print:border-zinc-300">{facValue}%</td>
                                             <td className="py-1.5 px-4 text-center font-mono font-bold border-r border-zinc-300 print:border-zinc-300">{facArea.toFixed(1)} m²</td>
-                                            <td className="border-r border-zinc-300 print:border-zinc-300"></td>
-                                            <td></td>
+                                            <td colSpan={2}></td>
                                             </tr>
                                         );
                                         })}
+                                        
                                         <tr className="text-[10px] bg-zinc-50 text-zinc-600 font-bold border border-zinc-300 print:border-black print:bg-white print:text-black">
                                         <td colSpan={4} className="py-2.5 px-4 text-right uppercase border-r border-zinc-300 print:border-black">Subtotal Netto {f.name} <span className="normal-case italic opacity-75">(Tanpa Add. Factors)</span></td>
                                         <td className="py-2.5 px-4 text-center font-mono font-black border-r border-zinc-300 print:border-black">{f.netto.toFixed(1)} m²</td>
@@ -2336,6 +2374,7 @@
                                         </tr>
                                     </React.Fragment>
                                     ))}
+                                    
                                     <tr className="text-xs bg-zinc-900 text-white font-black border border-zinc-900 print:break-inside-avoid print:bg-zinc-200 print:border-black print:text-black">
                                         <td colSpan={4} className="py-4 px-4 text-right uppercase tracking-widest border-r border-zinc-700 print:border-black">TOTAL GFA & PENGHUNI {b.name}</td>
                                         <td className="py-4 px-4 text-center font-mono text-base border-r border-zinc-700 print:border-black">{b.bruto.toFixed(1)} m²</td>
@@ -2382,15 +2421,15 @@
                 {/* TAB VISUALISASI VIEW */}
                 {activeTab === 'visual' && (
                   <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-2">
-                    <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:border-zinc-300 print:shadow-none">
+                    <section className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm print:break-inside-avoid print:border-zinc-300 print:shadow-none" aria-labelledby="visual-title">
                         <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-100 pb-4 print:border-zinc-300">
                             <div>
-                                <h3 className="font-bold text-zinc-800 flex items-center gap-2">{Layout && <Layout className="w-5 h-5 text-blue-600 print:text-black" />} Asumsi Dimensi Tapak per Lantai</h3>
+                                <h3 id="visual-title" className="font-bold text-zinc-800 flex items-center gap-2">{Layout && <Layout className="w-5 h-5 text-blue-600 print:text-black" />} Asumsi Dimensi Tapak per Lantai</h3>
                                 <p className="text-xs text-zinc-500 mt-1 pl-7">Aproksimasi ukuran bangunan untuk tiap lantai berdasarkan GFA.</p>
                             </div>
                             <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-lg shrink-0 print:hidden">
-                                <button onClick={() => setVisualMode('square')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${visualMode === 'square' ? 'bg-white text-blue-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>1:1 (Persegi Dasar)</button>
-                                <button onClick={() => setVisualMode('custom')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${visualMode === 'custom' ? 'bg-white text-blue-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>Kustom Lebar Muka</button>
+                                <button type="button" onClick={() => setVisualMode('square')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${visualMode === 'square' ? 'bg-white text-blue-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>1:1 (Persegi Dasar)</button>
+                                <button type="button" onClick={() => setVisualMode('custom')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${visualMode === 'custom' ? 'bg-white text-blue-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>Kustom Lebar Muka</button>
                             </div>
                         </div>
                         
@@ -2409,16 +2448,17 @@
                                     return (
                                         <div key={b.id} className="print:break-inside-avoid">
                                             <h4 className="font-black text-sm text-zinc-800 uppercase tracking-widest mb-4 border-l-4 border-blue-500 pl-3">{b.name}</h4>
-                                            <div className="flex flex-wrap gap-6 items-end print:gap-4">
+                                            <div className="flex flex-wrap gap-6 items-stretch print:gap-4">
                                                 {floorDims.map(f => {
                                                     const boxWidth = (f.dimW / maxDim) * MAX_BOX_SIZE;
                                                     const boxHeight = (f.dimL / maxDim) * MAX_BOX_SIZE;
                                                     
                                                     return (
-                                                        <div key={f.id} className="flex flex-col items-center bg-zinc-50 p-4 rounded-xl border border-zinc-200 print:border-zinc-300 print:bg-transparent print:break-inside-avoid shrink-0" style={{ width: Math.max(boxWidth + 40, 160) + 'px' }}>
+                                                        <div key={f.id} className="flex flex-col items-center bg-zinc-50 p-4 rounded-xl border border-zinc-200 print:border-zinc-300 print:bg-transparent print:break-inside-avoid shrink-0 h-full" style={{ width: Math.max(boxWidth + 40, 160) + 'px' }}>
+                                                            
                                                             {/* Kotak Representasi Lantai */}
                                                             <div 
-                                                                className="bg-zinc-100 rounded-lg overflow-hidden flex flex-col gap-0.5 p-1 border border-zinc-300 print:border-zinc-500 print:bg-transparent shadow-inner mb-4 relative group/box mx-auto transition-all"
+                                                                className="bg-zinc-100 rounded-lg overflow-hidden flex flex-col gap-0.5 p-1 border border-zinc-300 print:border-zinc-500 print:bg-transparent shadow-inner mb-4 relative group/box mx-auto transition-all mt-auto"
                                                                 style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }}
                                                             >
                                                                 {f.zoneBreakdown.filter(z => z.brutoArea > 0).map(z => {
@@ -2461,7 +2501,7 @@
                                                             <div className="mt-auto text-center w-full pt-3 border-t border-zinc-200 print:border-zinc-300">
                                                                 <h5 className="font-black text-xs text-zinc-800 uppercase tracking-widest truncate" title={f.name}>{f.name}</h5>
                                                                 
-                                                                {visualMode === 'custom' ? (
+                                                                {visualMode === 'custom' && (
                                                                     <div className="flex items-center justify-center gap-1.5 mt-2 mb-1 print:hidden">
                                                                         <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Lebar (W):</span>
                                                                         <input 
@@ -2472,10 +2512,12 @@
                                                                             placeholder="Mtr"
                                                                         />
                                                                     </div>
-                                                                ) : null}
+                                                                )}
 
-                                                                <div className="inline-flex items-center justify-center gap-1.5 mt-1.5 bg-blue-50 border border-blue-100 text-blue-800 px-2 py-1 rounded-md print:border-none print:bg-transparent print:text-black print:p-0 w-full">
-                                                                    <span className="font-mono font-black text-xs truncate">~ {f.dimW.toFixed(1)} <span className="text-[9px] opacity-70">x</span> {f.dimL.toFixed(1)} <span className="text-[9px] font-sans normal-case opacity-70">m</span></span>
+                                                                <div className="flex items-center justify-center gap-1 mt-1.5 bg-blue-50 border border-blue-100 text-blue-800 px-2 py-1.5 rounded-md print:border-zinc-300 print:bg-white print:text-black w-full overflow-hidden shadow-sm">
+                                                                    <span className="font-mono font-black text-xs whitespace-nowrap text-center">
+                                                                        ~ {f.dimW.toFixed(1)} <span className="text-[9px] opacity-70 px-0.5">x</span> {f.dimL.toFixed(1)} <span className="text-[9px] font-sans normal-case opacity-70 ml-0.5">m</span>
+                                                                    </span>
                                                                 </div>
                                                                 <p className="text-[9px] font-bold text-zinc-400 mt-1.5 uppercase tracking-widest">GFA: <span className="text-zinc-600 font-mono">{f.bruto.toFixed(1)} m²</span></p>
                                                             </div>
@@ -2492,28 +2534,27 @@
                                 Belum ada data luasan ruang.
                             </div>
                         )}
-                    </div>
+                    </section>
                   </div>
                 )}
-
               </main>
 
-              {/* MODALS Pindah / Duplikat */}
+              {/* MODALS Pindah / Duplikat (Di luar <main> agar semantic) */}
               {moveModal.isOpen && (
                 <div className="fixed inset-0 z-50 bg-zinc-900/60 backdrop-blur-sm flex items-center justify-center p-4">
                   <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{MoveRight && <MoveRight className="w-4 h-4 text-blue-600" />} Pindahkan Ruang</h3><button onClick={() => setMoveModal({ isOpen: false, targetFloorId: '' })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button></div>
+                    <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{MoveRight && <MoveRight className="w-4 h-4 text-blue-600" />} Pindahkan Ruang</h3><button type="button" onClick={() => setMoveModal({ isOpen: false, targetFloorId: '' })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button></div>
                     <div className="mb-6"><label className="text-[10px] font-black text-zinc-500 uppercase block mb-2">Lantai Tujuan</label><select value={moveModal.targetFloorId} onChange={(e) => setMoveModal(prev => ({ ...prev, targetFloorId: e.target.value }))} className="w-full bg-zinc-50 border border-zinc-300 rounded-md px-4 py-3 text-sm font-bold text-zinc-800 outline-none"><option value="" disabled>-- Pilih --</option>{buildings.map(b => (<optgroup key={b.id} label={`🏢 ${b.name}`}>{floors.filter(f => f.buildingId === b.id).map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}</optgroup>))}</select></div>
-                    <div className="flex gap-2"><button onClick={() => setMoveModal({ isOpen: false, targetFloorId: '' })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button><button onClick={confirmMoveRooms} disabled={!moveModal.targetFloorId} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm disabled:opacity-50 hover:bg-zinc-900">Pindahkan</button></div>
+                    <div className="flex gap-2"><button type="button" onClick={() => setMoveModal({ isOpen: false, targetFloorId: '' })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button><button type="button" onClick={confirmMoveRooms} disabled={!moveModal.targetFloorId} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm disabled:opacity-50 hover:bg-zinc-900">Pindahkan</button></div>
                   </div>
                 </div>
               )}
               {copyRoomModal.isOpen && (
                 <div className="fixed inset-0 z-50 bg-zinc-900/60 backdrop-blur-sm flex items-center justify-center p-4">
                   <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{Copy && <Copy className="w-4 h-4 text-blue-600" />} Salin Ruangan</h3><button onClick={() => setCopyRoomModal({ isOpen: false, targetFloorId: '' })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button></div>
+                    <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{Copy && <Copy className="w-4 h-4 text-blue-600" />} Salin Ruangan</h3><button type="button" onClick={() => setCopyRoomModal({ isOpen: false, targetFloorId: '' })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button></div>
                     <div className="mb-6"><label className="text-[10px] font-black text-zinc-500 uppercase block mb-2">Salin ke Lantai Tujuan</label><select value={copyRoomModal.targetFloorId} onChange={(e) => setCopyRoomModal(prev => ({ ...prev, targetFloorId: e.target.value }))} className="w-full bg-zinc-50 border border-zinc-300 rounded-md px-4 py-3 text-sm font-bold text-zinc-800 outline-none"><option value="" disabled>-- Pilih Lantai Tujuan --</option>{buildings.map(b => (<optgroup key={b.id} label={`🏢 ${b.name}`}>{floors.filter(f => f.buildingId === b.id).map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}</optgroup>))}</select></div>
-                    <div className="flex gap-2"><button onClick={() => setCopyRoomModal({ isOpen: false, targetFloorId: '' })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button><button onClick={confirmCopyRooms} disabled={!copyRoomModal.targetFloorId} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm disabled:opacity-50 hover:bg-zinc-900">Salin Sekarang</button></div>
+                    <div className="flex gap-2"><button type="button" onClick={() => setCopyRoomModal({ isOpen: false, targetFloorId: '' })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button><button type="button" onClick={confirmCopyRooms} disabled={!copyRoomModal.targetFloorId} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm disabled:opacity-50 hover:bg-zinc-900">Salin Sekarang</button></div>
                   </div>
                 </div>
               )}
@@ -2522,7 +2563,7 @@
                   <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
                     <div className="flex justify-between items-center mb-4 border-b pb-3">
                         <h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{MoveRight && <MoveRight className="w-4 h-4 text-blue-600" />} Pindah Lantai</h3>
-                        <button onClick={() => setMoveFloorModal({ isOpen: false, floorId: null, targetBuildingId: '' })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button>
+                        <button type="button" onClick={() => setMoveFloorModal({ isOpen: false, floorId: null, targetBuildingId: '' })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button>
                     </div>
                     <div className="mb-6">
                         <label className="text-[10px] font-black text-zinc-500 uppercase block mb-2">Pindah ke Gedung</label>
@@ -2538,8 +2579,8 @@
                         </select>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={() => setMoveFloorModal({ isOpen: false, floorId: null, targetBuildingId: '' })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button>
-                        <button onClick={confirmMoveFloor} disabled={!moveFloorModal.targetBuildingId || moveFloorModal.targetBuildingId === activeBuildingId} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm disabled:opacity-50 hover:bg-zinc-900">Pindahkan</button>
+                        <button type="button" onClick={() => setMoveFloorModal({ isOpen: false, floorId: null, targetBuildingId: '' })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button>
+                        <button type="button" onClick={confirmMoveFloor} disabled={!moveFloorModal.targetBuildingId || moveFloorModal.targetBuildingId === activeBuildingId} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm disabled:opacity-50 hover:bg-zinc-900">Pindahkan</button>
                     </div>
                   </div>
                 </div>
@@ -2549,7 +2590,7 @@
                   <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
                     <div className="flex justify-between items-center mb-4 border-b pb-3">
                         <h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{Copy && <Copy className="w-4 h-4 text-blue-600" />} Duplikasi Lantai</h3>
-                        <button onClick={() => setDuplicateModal({ isOpen: false, floorId: null, targetBuildingId: '', count: 1 })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button>
+                        <button type="button" onClick={() => setDuplicateModal({ isOpen: false, floorId: null, targetBuildingId: '', count: 1 })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button>
                     </div>
                     <div className="mb-4">
                         <label className="text-[10px] font-black text-zinc-500 uppercase block mb-2">Salin ke Gedung</label>
@@ -2569,8 +2610,8 @@
                         <input type="number" min="1" max="100" value={duplicateModal.count} onChange={(e) => setDuplicateModal(prev => ({ ...prev, count: parseInt(e.target.value) || 1 }))} className="w-full bg-zinc-50 border border-zinc-300 rounded-md px-4 py-3 text-xl text-center font-mono font-black text-zinc-800 outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={() => setDuplicateModal({ isOpen: false, floorId: null, targetBuildingId: '', count: 1 })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button>
-                        <button onClick={confirmDuplicate} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm hover:bg-zinc-900 disabled:opacity-50" disabled={!duplicateModal.targetBuildingId}>Gandakan</button>
+                        <button type="button" onClick={() => setDuplicateModal({ isOpen: false, floorId: null, targetBuildingId: '', count: 1 })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button>
+                        <button type="button" onClick={confirmDuplicate} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm hover:bg-zinc-900 disabled:opacity-50" disabled={!duplicateModal.targetBuildingId}>Gandakan</button>
                     </div>
                   </div>
                 </div>
@@ -2578,9 +2619,9 @@
               {duplicateBuildingModal.isOpen && (
                 <div className="fixed inset-0 z-50 bg-zinc-900/60 backdrop-blur-sm flex items-center justify-center p-4">
                   <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full p-6 animate-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{Copy && <Copy className="w-4 h-4 text-blue-600" />} Duplikasi Gedung</h3><button onClick={() => setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button></div>
+                    <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">{Copy && <Copy className="w-4 h-4 text-blue-600" />} Duplikasi Gedung</h3><button type="button" onClick={() => setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 })}>{X && <X className="w-4 h-4 text-zinc-400" />}</button></div>
                     <div className="mb-6"><label className="text-[10px] font-black text-zinc-500 uppercase block mb-2">Jumlah Salinan Gedung Baru</label><input type="number" min="1" max="20" value={duplicateBuildingModal.count} onChange={(e) => setDuplicateBuildingModal(prev => ({ ...prev, count: parseInt(e.target.value) || 1 }))} className="w-full bg-zinc-50 border border-zinc-300 rounded-md px-4 py-3 text-xl text-center font-mono font-black text-zinc-800 outline-none focus:ring-1 focus:ring-blue-500" autoFocus /></div>
-                    <div className="flex gap-2"><button onClick={() => setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button><button onClick={confirmDuplicateBuilding} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm hover:bg-zinc-900">Gandakan</button></div>
+                    <div className="flex gap-2"><button type="button" onClick={() => setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 uppercase">Batal</button><button type="button" onClick={confirmDuplicateBuilding} className="flex-1.5 py-2.5 rounded-md text-xs font-bold bg-zinc-800 text-white uppercase shadow-sm hover:bg-zinc-900">Gandakan</button></div>
                   </div>
                 </div>
               )}
@@ -2594,14 +2635,14 @@
                         {dialog.type === 'alert' ? (AlertTriangle && <AlertTriangle className="w-4 h-4 text-amber-500" />) : (Info && <Info className="w-4 h-4 text-blue-500" />)}
                         {dialog.title}
                       </h3>
-                      <button onClick={() => setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null })} className="text-zinc-400 hover:text-rose-500 bg-zinc-50 hover:bg-rose-50 p-1.5 rounded-md transition-colors">{X && <X className="w-4 h-4" />}</button>
+                      <button type="button" onClick={() => setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null })} className="text-zinc-400 hover:text-rose-500 bg-zinc-50 hover:bg-rose-50 p-1.5 rounded-md transition-colors">{X && <X className="w-4 h-4" />}</button>
                     </div>
                     <p className="text-sm text-zinc-600 mb-6 font-medium leading-relaxed">{dialog.message}</p>
                     <div className="flex gap-2">
                       {dialog.type === 'confirm' && (
-                          <button onClick={() => setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 hover:bg-zinc-200 uppercase tracking-widest">Batal</button>
+                          <button type="button" onClick={() => setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null })} className="flex-1 py-2.5 rounded-md text-xs font-bold bg-zinc-100 text-zinc-600 hover:bg-zinc-200 uppercase tracking-widest">Batal</button>
                       )}
-                      <button
+                      <button type="button"
                           onClick={() => {
                               if (dialog.onConfirm) dialog.onConfirm();
                               setDialog({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
