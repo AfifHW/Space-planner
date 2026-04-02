@@ -86,7 +86,8 @@
             PieChart, Palette, Settings2, AlertTriangle, CheckCircle2, LandPlot,
             Zap, HardHat, SlidersHorizontal, Undo2, Redo2, GripVertical, Copy,
             MapPin, Printer, FileSpreadsheet, ArrowUpDown, Save, FolderOpen,
-            Building, FilePlus, Sparkles, Loader2, MoveRight, Car, ParkingCircle, Bus, Bike, Maximize2, Minimize2
+            Building, FilePlus, Sparkles, Loader2, MoveRight, Car, ParkingCircle, Bus, Bike, Maximize2, Minimize2,
+            Camera // Ditambahkan untuk ikon Screenshot
         } = lucide;
         const MapIcon = lucide.Map; 
 
@@ -275,6 +276,7 @@
           const [reportSortBy, setReportSortBy] = useState('default');
           const [isExportingExcel, setIsExportingExcel] = useState(false);
           const [isPrinting, setIsPrinting] = useState(false);
+          const [isTakingScreenshot, setIsTakingScreenshot] = useState(false); // State untuk Screenshot
           const [isAutosaving, setIsAutosaving] = useState(false);
           const [aiLoadingState, setAiLoadingState] = useState({});
           
@@ -655,7 +657,7 @@
                 newBuildings.push({ ...bToCopy, id: newBId, name: `${bToCopy.name} (Copy ${i + 1})`, kdbFloorId: bToCopy.kdbFloorId ? floorIdMap[bToCopy.kdbFloorId] : '', ktbFloorId: bToCopy.ktbFloorId ? floorIdMap[bToCopy.ktbFloorId] : '' });
                 newFloors.push(...copiedFloors); newRooms.push(...copiedRooms);
               }
-              return { ...prev, buildings: [...prev.buildings, ...newBuildings], floors: [...prev.floors, ...newFloors], rooms: [...prev.rooms, ...newRooms] };
+              return { ...prev, buildings: [...prev.buildings, ...newBuildings], floors: [...prev.floors, ...newRooms], rooms: [...prev.rooms, ...newRooms] };
             });
             setDuplicateBuildingModal({ isOpen: false, buildingId: null, count: 1 });
           };
@@ -894,6 +896,60 @@
             }
           }, [projectName, showAlert]);
 
+          // FUNGSI SCREENSHOT
+          const handleScreenshot = useCallback(() => {
+              setIsTakingScreenshot(true);
+              const takeShot = () => {
+                  const element = document.getElementById('printable-report');
+                  if (!element) { setIsTakingScreenshot(false); return; }
+
+                  // Ekspansi sementara area scroll agar tidak terpotong
+                  const scrollableElements = element.querySelectorAll('.max-h-80, .overflow-y-auto, .max-h-64, .custom-scroll, .max-h-\\[500px\\]');
+                  const originalStyles = [];
+                  scrollableElements.forEach(el => {
+                      originalStyles.push({ el, maxHeight: el.style.maxHeight, overflowY: el.style.overflowY });
+                      el.style.maxHeight = 'none';
+                      el.style.overflowY = 'visible';
+                  });
+
+                  window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#f4f4f5', scrollY: -window.scrollY }).then(canvas => {
+                      // Kembalikan style seperti semula
+                      originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                          el.style.maxHeight = maxHeight;
+                          el.style.overflowY = overflowY;
+                      });
+
+                      const image = canvas.toDataURL("image/png");
+                      const link = document.createElement('a');
+                      link.href = image;
+                      link.download = `${(projectName || 'Laporan_Program_Ruang').replace(/\s+/g, '_')}_Screenshot.png`;
+                      link.click();
+                      setIsTakingScreenshot(false);
+                      showAlert("Screenshot berhasil disimpan.", "Berhasil");
+                  }).catch(err => {
+                      // Kembalikan style jika error
+                      originalStyles.forEach(({ el, maxHeight, overflowY }) => {
+                          el.style.maxHeight = maxHeight;
+                          el.style.overflowY = overflowY;
+                      });
+                      console.error("Screenshot failed:", err);
+                      setIsTakingScreenshot(false);
+                      showAlert("Terjadi kesalahan saat mengambil screenshot.", "Error");
+                  });
+              };
+
+              if (window.html2canvas) {
+                  takeShot();
+              } else {
+                  const script = document.createElement('script');
+                  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                  script.onload = takeShot;
+                  script.onerror = () => { setIsTakingScreenshot(false); showAlert("Gagal memuat modul Screenshot.", "Error"); };
+                  document.body.appendChild(script);
+              }
+          }, [projectName, showAlert]);
+
+
           const handleExportExcel = useCallback(() => {
             setIsExportingExcel(true);
             const generateXLSX = () => {
@@ -1131,12 +1187,17 @@
                   </div>
                   
                   {(activeTab === 'report' || activeTab === 'parking') && (
-                    <div className="flex items-center gap-3 print:hidden shrink-0" data-html2canvas-ignore="true">
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 print:hidden shrink-0" data-html2canvas-ignore="true">
                       {activeTab === 'report' && (
                           <button onClick={handleExportExcel} disabled={isExportingExcel} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isExportingExcel ? 'bg-emerald-400 text-white cursor-wait' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}>
-                            {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel (.xlsx)'}
+                            {FileSpreadsheet && <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-pulse' : ''}`} />} {isExportingExcel ? 'Menyiapkan...' : 'Excel'}
                           </button>
                       )}
+                      {/* SCREENSHOT BUTTON */}
+                      <button onClick={handleScreenshot} disabled={isTakingScreenshot} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isTakingScreenshot ? 'bg-blue-400 text-white cursor-wait' : 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50'}`}>
+                        {Camera && <Camera className={`w-4 h-4 ${isTakingScreenshot ? 'animate-pulse' : ''}`} />} {isTakingScreenshot ? 'Memproses...' : 'Screenshot (PNG)'}
+                      </button>
+
                       <button onClick={handlePrintPDF} disabled={isPrinting} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-black uppercase tracking-widest transition-colors shadow-sm ${isPrinting ? 'bg-zinc-400 text-white cursor-wait' : 'bg-zinc-800 text-white hover:bg-zinc-900'}`}>
                         {Printer && <Printer className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />} {isPrinting ? 'Memproses...' : 'Cetak PDF'}
                       </button>
@@ -1968,10 +2029,9 @@
                   </div>
                 )}
 
-                {/* TAB REPORT VIEW (Unchanged data, stylized to match theme) */}
+                {/* TAB REPORT VIEW */}
                 {activeTab === 'report' && (
                   <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-2">
-                    {/* The report code is kept functionally identical, but inherits the new global CSS (zinc, sharp borders, font-mono) */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       
                       {/* Analisis GFA Kawasan */}
