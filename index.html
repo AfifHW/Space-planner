@@ -984,7 +984,7 @@
                 wsData.push([c("Sisa Kuota KLB", styleDataText), c(Number(sisaKuotaKLB.toFixed(2)), styleDataNumber), c("m²", styleDataNumber)]); wsData.push([]);
 
                 // Tabel Parkir Keseluruhan
-                wsData.push([c("KEBUTUHAN PARKIR (KESELURUHAN)", styleSubtitle)]); wsData.push([]);
+                wsData.push([c("KEBUTUHAN PARKIR (KESELURUHAN)", styleSubtitle)]); 
                 wsData.push([c("Aturan Parkir", styleHeader), c("Basis", styleHeader), c("Kendaraan", styleHeader), c("Jml Dibutuhkan", styleHeader), c("Est. Luas", styleHeader)]);
                 stats.parkingStats.details.forEach(pr => {
                     wsData.push([c(`${pr.name} (${pr.ruleDesc})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
@@ -994,19 +994,20 @@
                 wsData.push([]);
 
                 stats.buildingDetails.forEach(b => {
-                   wsData.push([c(`RINCIAN: ${b.name.toUpperCase()}`, styleSubtitle)]);
+                   const styleBuildingHeader = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "3F3F46" } }, alignment: { vertical: "center", horizontal: "left" }, border: borderAll };
+                   // Judul Gedung diberi background gelap agar terlihat seperti Header pemisah
+                   wsData.push([c(` RINCIAN: ${b.name.toUpperCase()}`, styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader), c("", styleBuildingHeader)]);
+                   
                    if (b.notes && b.notes.trim() !== '') wsData.push([c(`Catatan: ${b.notes}`, { font: { italic: true, color: { rgb: "52525B" } } })]);
-                   wsData.push([]);
                    
                    // Perhitungan Parkir Spesifik Gedung ini di Excel
                    if (b.parkingStats && b.parkingStats.details.length > 0) {
-                       wsData.push([c("Estimasi Kebutuhan Parkir Gedung", { font: { bold: true, color: { rgb: "52525B" } } })]);
+                       wsData.push([c("Estimasi Kebutuhan Parkir Gedung", { font: { bold: true, color: { rgb: "52525B" } }, fill: { fgColor: { rgb: "F4F4F5" } } }), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }}), c("", {fill: { fgColor: { rgb: "F4F4F5" } }})]);
                        wsData.push([c("Aturan", styleDataText), c("Basis", styleDataText), c("Kendaraan", styleDataText), c("Jml", styleDataText), c("Luas", styleDataText)]);
                        b.parkingStats.details.forEach(pr => {
                            wsData.push([c(pr.name, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
                        });
                        wsData.push([c("Subtotal Parkir Gedung", styleBold), c("", emptyBorder), c("", emptyBorder), c(b.parkingStats.totalCount, styleDataNumberBold), c(`${b.parkingStats.totalArea} m²`, styleDataNumberBold)]);
-                       wsData.push([]);
                    }
 
                    wsData.push([ c("Lantai", styleHeader), c("Nama Ruangan", styleHeader), c("Zona", styleHeader), c("Jml Ruang", styleHeader), c("Standar (m²)", styleHeader), c("Luas (m²)", styleHeader), c("Penghuni", styleHeader), c("Keterangan", styleHeader) ]);
@@ -1037,14 +1038,13 @@
 
                       const floorTotalFill = { fgColor: { rgb: "E4E4E7" } };
                       wsData.push([ c("", { border: borderAll, fill: floorTotalFill }), c(`TOTAL BRUTO ${f.name}`, { ...styleDataText, font: { bold: true }, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c(Number(f.bruto.toFixed(2)), { ...styleDataNumberBold, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }), c("", { border: borderAll, fill: floorTotalFill }) ]);
-                      wsData.push([]);
                    });
 
                    const buildingTotalFill = { fgColor: { rgb: "27272A" } };
                    const styleBuildingTotalText = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "right", vertical: "center" } };
                    const styleBuildingTotalNumber = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: buildingTotalFill, border: borderAll, alignment: { horizontal: "center", vertical: "center" } };
                    wsData.push([ c("", { border: borderAll, fill: buildingTotalFill }), c(`TOTAL GFA & PENGHUNI ${b.name.toUpperCase()}`, styleBuildingTotalText), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c("", { border: borderAll, fill: buildingTotalFill }), c(Number(b.bruto.toFixed(2)), styleBuildingTotalNumber), c(b.occupants, styleBuildingTotalNumber), c(`Footprint: ${b.footprint.toFixed(1)} m²`, { font: { color: { rgb: "E4E4E7" }, italic: true }, fill: buildingTotalFill, border: borderAll }) ]);
-                   wsData.push([]);
+                   wsData.push([]); // Jeda antar gedung saja
                 });
 
                 const grandTotalFill = { fgColor: { rgb: "18181B" } };
