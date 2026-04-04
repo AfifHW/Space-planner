@@ -186,8 +186,8 @@
             { id: 'z3', label: 'Privat', colorId: 'purple' }
           ],
           parkingRules: [
-            { id: 'pr1', name: 'Kebutuhan Mobil', vehicleType: 'Mobil', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25, targetBuildingId: '' },
-            { id: 'pr2', name: 'Kebutuhan Motor', vehicleType: 'Motor', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 50, areaPerVehicle: 2, targetBuildingId: '' }
+            { id: 'pr1', name: 'Kebutuhan Mobil', vehicleType: 'Mobil', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25, targetBuildingIds: [] },
+            { id: 'pr2', name: 'Kebutuhan Motor', vehicleType: 'Motor', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 50, areaPerVehicle: 2, targetBuildingIds: [] }
           ],
           buildings: [
             { id: 'b1', name: 'Gedung Utama', kdbFloorId: 'f1', ktbFloorId: '', notes: '' },
@@ -216,8 +216,12 @@
                       if (pr.targetZoneId !== undefined) { pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : []; delete pr.targetZoneId; }
                       if (!pr.targetZoneIds) pr.targetZoneIds = [];
                       if (!pr.calcMethod) pr.calcMethod = 'ratio';
-                      // MIGRATION: Ensure targetBuildingId exists
-                      if (pr.targetBuildingId === undefined) pr.targetBuildingId = '';
+                      // MIGRATION: targetBuildingId to targetBuildingIds array
+                      if (pr.targetBuildingId !== undefined) {
+                          pr.targetBuildingIds = pr.targetBuildingId && pr.targetBuildingId !== '' ? [pr.targetBuildingId] : [];
+                          delete pr.targetBuildingId;
+                      }
+                      if (!pr.targetBuildingIds) pr.targetBuildingIds = [];
                       return pr;
                   });
                   return parsed;
@@ -432,12 +436,12 @@
               });
 
               // PERHITUNGAN PARKIR SPESIFIK PER GEDUNG
-              // Filter: Aturan Global (targetBuildingId === '') ATAU Aturan khusus gedung ini
+              // Aturan berlaku jika rule.targetBuildingIds kosong (Global) ATAU b.id ada di dalamnya
               const bParkingStats = {
                   totalArea: 0,
                   totalCount: 0,
                   details: parkingRules
-                      .filter(rule => !rule.targetBuildingId || rule.targetBuildingId === '' || rule.targetBuildingId === b.id)
+                      .filter(rule => !rule.targetBuildingIds || rule.targetBuildingIds.length === 0 || rule.targetBuildingIds.includes(b.id))
                       .map(rule => {
                           let baseValue = 0; let basisLabel = '';
                           if (rule.basis === 'gfa') { baseValue = bBruto; basisLabel = 'GFA Gedung'; }
@@ -459,8 +463,10 @@
 
                           const area = count * rule.areaPerVehicle;
                           const ruleDesc = rule.calcMethod === 'percentage' ? `${rule.ratio}%` : `1 per ${rule.ratio}`;
+                          
+                          const isGlobal = !rule.targetBuildingIds || rule.targetBuildingIds.length === 0;
 
-                          return { ...rule, baseValue, basisLabel, count, area, ruleDesc };
+                          return { ...rule, baseValue, basisLabel, count, area, ruleDesc, isGlobal };
                       })
               };
               bParkingStats.totalArea = bParkingStats.details.reduce((sum, d) => sum + d.area, 0);
@@ -499,31 +505,44 @@
                 totalCount: 0,
                 details: parkingRules.map(rule => {
                     let baseValue = 0; let basisLabel = '';
-                    const isGlobal = !rule.targetBuildingId || rule.targetBuildingId === '';
-                    const targetB = isGlobal ? null : buildingDetails.find(b => b.id === rule.targetBuildingId);
+                    const isGlobal = !rule.targetBuildingIds || rule.targetBuildingIds.length === 0;
+                    
+                    let targetBuildings = [];
+                    if (!isGlobal) {
+                        targetBuildings = buildingDetails.filter(b => rule.targetBuildingIds.includes(b.id));
+                    }
 
-                    // Jika aturan khusus gedung, tapi gedungnya sudah dihapus
-                    if (!isGlobal && !targetB) {
-                         return { ...rule, baseValue: 0, basisLabel: 'Gedung tidak ditemukan', count: 0, area: 0, ruleDesc: '-', isGlobal, targetBuildingName: 'Error' };
+                    if (!isGlobal && targetBuildings.length === 0) {
+                         return { ...rule, baseValue: 0, basisLabel: 'Gedung tidak ditemukan', count: 0, area: 0, ruleDesc: '-', isGlobal, targetBuildingNames: 'Error' };
                     }
 
                     if (rule.basis === 'gfa') { 
-                        baseValue = isGlobal ? globalBrutoTotal : targetB.bruto; 
-                        basisLabel = isGlobal ? 'Total GFA Kawasan' : `GFA ${targetB.name}`; 
+                        baseValue = isGlobal ? globalBrutoTotal : targetBuildings.reduce((sum, b) => sum + b.bruto, 0); 
+                        basisLabel = isGlobal ? 'Total GFA Kawasan' : `GFA ${targetBuildings.map(b => b.name).join(', ')}`; 
                     }
                     else if (rule.basis === 'occupants') { 
-                        baseValue = isGlobal ? globalOccupantsTotal : targetB.occupants; 
-                        basisLabel = isGlobal ? 'Total Penghuni Kawasan' : `Penghuni ${targetB.name}`; 
+                        baseValue = isGlobal ? globalOccupantsTotal : targetBuildings.reduce((sum, b) => sum + b.occupants, 0); 
+                        basisLabel = isGlobal ? 'Total Penghuni Kawasan' : `Penghuni ${targetBuildings.map(b => b.name).join(', ')}`; 
                     }
                     else if (rule.basis === 'zone') {
-                        const zBreakdown = isGlobal ? zoneBreakdown : targetB.zoneBreakdown;
                         if (rule.targetZoneIds && rule.targetZoneIds.length > 0) {
                             let combinedArea = 0; let zoneNames = [];
                             rule.targetZoneIds.forEach(zId => {
-                                const zStats = zBreakdown.find(z => z.id === zId);
-                                if (zStats) { combinedArea += zStats.brutoArea; zoneNames.push(zStats.name); }
+                                if (isGlobal) {
+                                    const zStats = zoneBreakdown.find(z => z.id === zId);
+                                    if (zStats) { combinedArea += zStats.brutoArea; zoneNames.push(zStats.name); }
+                                } else {
+                                    let zoneAreaForRule = 0;
+                                    targetBuildings.forEach(tb => {
+                                        const zStats = tb.zoneBreakdown.find(z => z.id === zId);
+                                        if (zStats) { zoneAreaForRule += zStats.brutoArea; }
+                                    });
+                                    combinedArea += zoneAreaForRule;
+                                    const zName = zones.find(z => z.id === zId)?.label || '';
+                                    if(zName && !zoneNames.includes(zName)) zoneNames.push(zName);
+                                }
                             });
-                            baseValue = combinedArea; basisLabel = `Zona ${zoneNames.join(', ')} ${isGlobal ? '' : `(${targetB.name})`}`;
+                            baseValue = combinedArea; basisLabel = `Zona ${zoneNames.join(', ')} ${isGlobal ? '' : `(${targetBuildings.map(b=>b.name).join(', ')})`}`;
                         } else { baseValue = 0; basisLabel = 'Pilih Zona Target'; }
                     }
 
@@ -533,8 +552,9 @@
 
                     const area = count * rule.areaPerVehicle;
                     const ruleDesc = rule.calcMethod === 'percentage' ? `${rule.ratio}%` : `1 per ${rule.ratio}`;
+                    const targetBuildingNames = isGlobal ? 'Kawasan' : targetBuildings.map(b => b.name).join(', ');
 
-                    return { ...rule, baseValue, basisLabel, count, area, ruleDesc, isGlobal, targetBuildingName: targetB ? targetB.name : 'Kawasan' };
+                    return { ...rule, baseValue, basisLabel, count, area, ruleDesc, isGlobal, targetBuildingNames };
                 })
             };
             parkingStats.totalArea = parkingStats.details.reduce((sum, d) => sum + d.area, 0);
@@ -600,7 +620,7 @@
           };
           const updateZone = (id, field, value) => setZones(prev => prev.map(z => z.id === id ? { ...z, [field]: value } : z));
 
-          const addParkingRule = () => { const newId = `pr${Date.now()}`; setParkingRules(prev => [...prev, { id: newId, name: 'Aturan Baru', vehicleType: 'Mobil', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25, targetBuildingId: '' }]); };
+          const addParkingRule = () => { const newId = `pr${Date.now()}`; setParkingRules(prev => [...prev, { id: newId, name: 'Aturan Baru', vehicleType: 'Mobil', calcMethod: 'ratio', basis: 'gfa', targetZoneIds: [], ratio: 100, areaPerVehicle: 25, targetBuildingIds: [] }]); };
           const updateParkingRule = (id, field, value) => setParkingRules(prev => prev.map(pr => pr.id === id ? { ...pr, [field]: value } : pr));
           const removeParkingRule = (id) => setParkingRules(prev => prev.filter(pr => pr.id !== id));
 
@@ -919,7 +939,11 @@
                       if (pr.targetZoneId !== undefined) { pr.targetZoneIds = pr.targetZoneId ? [pr.targetZoneId] : []; delete pr.targetZoneId; }
                       if (!pr.targetZoneIds) pr.targetZoneIds = [];
                       if (!pr.calcMethod) pr.calcMethod = 'ratio';
-                      if (pr.targetBuildingId === undefined) pr.targetBuildingId = '';
+                      if (pr.targetBuildingId !== undefined) {
+                          pr.targetBuildingIds = pr.targetBuildingId && pr.targetBuildingId !== '' ? [pr.targetBuildingId] : [];
+                          delete pr.targetBuildingId;
+                      }
+                      if (!pr.targetBuildingIds) pr.targetBuildingIds = [];
                       return pr;
                   });
                   setAppState(loadedState); setActiveBuildingId(loadedState.buildings[0].id); setShowProjectParams(false);
@@ -1144,7 +1168,7 @@
                 wsSummaryData.push([c("Aturan Parkir", styleHeader), c("Basis", styleHeader), c("Kendaraan", styleHeader), c("Jml Dibutuhkan", styleHeader), c("Est. Luas", styleHeader)]);
                 stats.parkingStats.details.forEach(pr => {
                     // Tambahkan indikator nama gedung jika bukan aturan global di Excel
-                    const ruleNameDisplay = pr.isGlobal ? pr.name : `${pr.name} (${pr.targetBuildingName})`;
+                    const ruleNameDisplay = pr.isGlobal ? pr.name : `${pr.name} (${pr.targetBuildingNames})`;
                     wsSummaryData.push([c(`${ruleNameDisplay} (${pr.ruleDesc})`, styleDataText), c(`${pr.basisLabel} (${pr.baseValue.toFixed(1)})`, styleDataText), c(pr.vehicleType, styleDataText), c(pr.count, styleDataNumberBold), c(`${pr.area} m²`, styleDataNumber)]);
                 });
                 wsSummaryData.push([c("TOTAL KEBUTUHAN LAHAN PARKIR", styleBold), c("", emptyBorder), c("", emptyBorder), c("", emptyBorder), c(`${stats.parkingStats.totalArea} m²`, styleDataNumberBold)]);
@@ -1512,13 +1536,25 @@
                                                 
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                     <div className="col-span-2 md:col-span-4 bg-blue-50/50 p-3 rounded border border-blue-100">
-                                                        <label className="text-[9px] font-black text-blue-800 uppercase tracking-widest block mb-1.5">Terapkan Pada</label>
-                                                        <select value={rule.targetBuildingId || ''} onChange={(e) => updateParkingRule(rule.id, 'targetBuildingId', e.target.value)} className="w-full bg-white border border-blue-200 rounded-md px-3 py-2 text-sm font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer shadow-sm">
-                                                            <option value="">Seluruh Kawasan (Global)</option>
-                                                            <optgroup label="Khusus Gedung Tertentu:">
-                                                                {buildings.map(b => <option key={b.id} value={b.id}>🏢 Khusus: {b.name}</option>)}
-                                                            </optgroup>
-                                                        </select>
+                                                        <label className="text-[9px] font-black text-blue-800 uppercase tracking-widest block mb-2">Terapkan Pada Gedung (Bisa multi-pilih. Kosongkan untuk Global Kawasan)</label>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {buildings.map(b => {
+                                                                const isSelected = (rule.targetBuildingIds || []).includes(b.id);
+                                                                return (
+                                                                    <button type="button" 
+                                                                        key={b.id}
+                                                                        onClick={() => {
+                                                                            const currentIds = rule.targetBuildingIds || [];
+                                                                            const newIds = isSelected ? currentIds.filter(id => id !== b.id) : [...currentIds, b.id];
+                                                                            updateParkingRule(rule.id, 'targetBuildingIds', newIds);
+                                                                        }}
+                                                                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-blue-200 text-blue-700 hover:bg-blue-100 shadow-sm'}`}
+                                                                    >
+                                                                        🏢 {b.name}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
                                                     </div>
 
                                                     <div>
@@ -1602,8 +1638,8 @@
                                                     <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1 flex items-center gap-1">
                                                         Hasil: {rule.name}
                                                     </div>
-                                                    <div className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-zinc-300 mb-3 inline-block font-medium border border-white/5">
-                                                        Terapkan: {statDetail ? statDetail.targetBuildingName : 'Kawasan'}
+                                                    <div className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-zinc-300 mb-3 inline-block font-medium border border-white/5 truncate max-w-full" title={`Terapkan: ${statDetail ? statDetail.targetBuildingNames : 'Kawasan'}`}>
+                                                        Terapkan: {statDetail ? statDetail.targetBuildingNames : 'Kawasan'}
                                                     </div>
 
                                                     <div className="flex items-baseline gap-2 mb-4">
